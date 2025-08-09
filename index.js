@@ -261,17 +261,15 @@ app.post('/create-qris', async (req, res) => {
 
 app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
-
-
     const filePath = path.join(__dirname, 'tmp', `${partner_reff}.png`);
 
     try {
-        const [results] = await db.query('SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?', [partner_reff]);
-
-
+        const [results] = await db.query(
+            'SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?',
+            [partner_reff]
+        );
 
         if (!results || results.length === 0) {
-
             return res.status(404).send('QRIS tidak ditemukan.');
         }
 
@@ -286,18 +284,12 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
 
         await pipeline(response.data, fs.createWriteStream(filePath));
 
-
-        res.download(filePath, `qris-${partner_reff}.png`, async (err) => {
+        // Kirim file ke client tanpa hapus
+        res.download(filePath, `qris-${partner_reff}.png`, (err) => {
             if (err) {
                 console.log(`❌ Error saat mengirim file ke client: ${err.message}`);
-                return;
-            }
-
-            try {
-                await fsPromises.unlink(filePath);
-                console.log(`🧹 File sementara dihapus: ${filePath}`);
-            } catch (e) {
-                console.log(`❌ Gagal hapus file: ${e.message}`);
+            } else {
+                console.log(`📂 File disimpan di: ${filePath}`);
             }
         });
 
