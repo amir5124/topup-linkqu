@@ -263,10 +263,8 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
 
     try {
-        const db = await mysql.createConnection(dbConfig);
-
         // 1️⃣ Cek apakah QR sudah ada di DB
-        const [check] = await db.execute(
+        const [check] = await db.query(
             'SELECT qris_image FROM inquiry_qris WHERE partner_reff = ?',
             [partner_reff]
         );
@@ -279,7 +277,7 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
         }
 
         // 2️⃣ Ambil URL QR dari DB
-        const [rows] = await db.execute(
+        const [rows] = await db.query(
             'SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?',
             [partner_reff]
         );
@@ -296,7 +294,7 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
         const buffer = Buffer.from(response.data);
 
         // 4️⃣ Simpan ke DB
-        await db.execute(
+        await db.query(
             'UPDATE inquiry_qris SET qris_image = ? WHERE partner_reff = ?',
             [buffer, partner_reff]
         );
