@@ -262,52 +262,49 @@ app.post('/create-qris', async (req, res) => {
 app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
 
-    db.query('SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?', [partner_reff], async (err, results) => {
-        if (err) {
-            console.error("❌ DB error:", err);
-            return res.status(500).send('Gagal mengakses database.');
-        }
+
+    const filePath = path.join(__dirname, 'tmp', `${partner_reff}.png`);
+
+    try {
+        const [results] = await db.query('SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?', [partner_reff]);
+
+
 
         if (!results || results.length === 0) {
+
             return res.status(404).send('QRIS tidak ditemukan.');
         }
 
         const imageUrl = results[0].qris_url?.trim();
-        if (!imageUrl || typeof imageUrl !== 'string') {
-            return res.status(400).send('URL QRIS tidak valid.');
-        }
+        logToFile(`🔗 URL QRIS: ${imageUrl}`);
 
-        const filePath = path.join(__dirname, 'tmp', `${partner_reff}.png`);
+        const response = await axios({
+            method: 'GET',
+            url: imageUrl,
+            responseType: 'stream'
+        });
 
-        try {
-            const response = await axios({
-                method: 'GET',
-                url: imageUrl,
-                responseType: 'stream'
-            });
+        await pipeline(response.data, fs.createWriteStream(filePath));
 
-            // Simpan file sementara
-            await pipeline(response.data, fs.createWriteStream(filePath));
 
-            // Download file ke client
-            res.download(filePath, `qris-${partner_reff}.png`, async (err) => {
-                if (err) {
-                    console.error('❌ Download error:', err);
-                }
+        res.download(filePath, `qris-${partner_reff}.png`, async (err) => {
+            if (err) {
+                console.log(`❌ Error saat mengirim file ke client: ${err.message}`);
+                return;
+            }
 
-                // Hapus file setelah dikirim
-                try {
-                    await fsPromises.unlink(filePath);
-                } catch (e) {
-                    console.error('❌ Gagal hapus file:', e.message);
-                }
-            });
+            try {
+                await fsPromises.unlink(filePath);
+                console.log(`🧹 File sementara dihapus: ${filePath}`);
+            } catch (e) {
+                console.log(`❌ Gagal hapus file: ${e.message}`);
+            }
+        });
 
-        } catch (error) {
-            console.error('❌ Gagal mengambil gambar:', error.message);
-            return res.status(500).send('Gagal mengambil gambar QR dari URL.');
-        }
-    });
+    } catch (err) {
+        logToFile(`❌ Error umum/fatal: ${err.message}`);
+        return res.status(500).send('Terjadi kesalahan saat memproses permintaan.');
+    }
 });
 
 async function addBalance(amount, customer_name, va_code, serialnumber) {
@@ -563,10 +560,6 @@ app.get('/qr-list', async (req, res) => {
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data QR" });
     }
 });
-
-
-
-
 
 const PORT = 3000;
 app.listen(PORT, () => {
