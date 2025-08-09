@@ -261,41 +261,46 @@ app.post('/create-qris', async (req, res) => {
 
 app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
-    const filePath = path.join(__dirname, 'tmp', `${partner_reff}.png`);
 
     try {
-        const [results] = await db.query(
+        const [results] = await db.execute(
+            'SELECT qris_image FROM inquiry_qris WHERE partner_reff = ?',
+            [partner_reff]
+        );
+
+        if (results.length > 0 && results[0].qris_image) {
+            // Sudah ada di DB → kirim langsung
+            res.setHeader('Content-Type', 'image/png');
+            return res.send(results[0].qris_image);
+        }
+
+        // Ambil dari URL kalau belum ada
+        const [rows] = await db.execute(
             'SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?',
             [partner_reff]
         );
 
-        if (!results || results.length === 0) {
+        if (!rows.length || !rows[0].qris_url) {
             return res.status(404).send('QRIS tidak ditemukan.');
         }
 
-        const imageUrl = results[0].qris_url?.trim();
-        logToFile(`🔗 URL QRIS: ${imageUrl}`);
+        const imageUrl = rows[0].qris_url.trim();
+        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        const buffer = Buffer.from(response.data);
 
-        const response = await axios({
-            method: 'GET',
-            url: imageUrl,
-            responseType: 'stream'
-        });
+        // Simpan buffer gambar ke DB
+        await db.execute(
+            'UPDATE inquiry_qris SET qris_image = ? WHERE partner_reff = ?',
+            [buffer, partner_reff]
+        );
 
-        await pipeline(response.data, fs.createWriteStream(filePath));
-
-        // Kirim file ke client tanpa hapus
-        res.download(filePath, `qris-${partner_reff}.png`, (err) => {
-            if (err) {
-                console.log(`❌ Error saat mengirim file ke client: ${err.message}`);
-            } else {
-                console.log(`📂 File disimpan di: ${filePath}`);
-            }
-        });
+        // Kirim ke client
+        res.setHeader('Content-Type', 'image/png');
+        res.send(buffer);
 
     } catch (err) {
-        logToFile(`❌ Error umum/fatal: ${err.message}`);
-        return res.status(500).send('Terjadi kesalahan saat memproses permintaan.');
+        console.error(err);
+        res.status(500).send('Terjadi kesalahan server.');
     }
 });
 
