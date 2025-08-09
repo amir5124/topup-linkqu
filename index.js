@@ -565,6 +565,29 @@ app.get('/qr-list', async (req, res) => {
     }
 });
 
+cron.schedule('* * * * *', async () => {
+    const now = new Date();
+    const pad = n => n.toString().padStart(2, '0');
+    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
+    // Hapus VA expired
+    await db.query(`
+        DELETE FROM inquiry_va 
+        WHERE expired < ? 
+        AND status = 'PENDING'
+    `, [formatNow]);
+
+    // Hapus QRIS expired
+    await db.query(`
+        DELETE FROM inquiry_qris 
+        WHERE expired < ? 
+        AND status = 'PENDING'
+    `, [formatNow]);
+
+    console.log("VA & QRIS expired dibersihkan");
+});
+
+
 const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
