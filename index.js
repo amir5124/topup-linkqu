@@ -7,8 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 const FormData = require('form-data');
-const { pipeline } = require('stream/promises');
-const cron = require('node-cron');
+
 
 const app = express();
 app.use(cors());
@@ -498,23 +497,18 @@ app.get('/va-list', async (req, res) => {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    // Format waktu sekarang ke YYYYMMDDHHMMSS
-    const now = new Date();
-    const pad = (n) => n.toString().padStart(2, '0');
-    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-
     try {
-        // Hapus data VA yang expired
+        // Hapus VA yang sudah lebih dari 15 menit dari waktu dibuat
         const deleteQuery = `
             DELETE FROM inquiry_va 
-            WHERE expired < ?
+            WHERE created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
               AND status = 'PENDING'
         `;
-        await db.query(deleteQuery, [formatNow]);
+        await db.query(deleteQuery);
 
         // Ambil data terbaru
         const selectQuery = `
-            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at	
+            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
             FROM inquiry_va 
             WHERE customer_name = ? 
             ORDER BY created_at DESC 
@@ -528,7 +522,6 @@ app.get('/va-list', async (req, res) => {
     }
 });
 
-
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
 
@@ -536,23 +529,18 @@ app.get('/qr-list', async (req, res) => {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    // Format waktu sekarang ke YYYYMMDDHHMMSS
-    const now = new Date();
-    const pad = (n) => n.toString().padStart(2, '0');
-    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-
     try {
-        // Hapus QR expired
+        // Hapus QR yang sudah lebih dari 15 menit dari waktu dibuat
         const deleteQuery = `
             DELETE FROM inquiry_qris 
-            WHERE expired < ? 
+            WHERE created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
               AND status = 'PENDING'
         `;
-        await db.query(deleteQuery, [formatNow]);
+        await db.query(deleteQuery);
 
         // Ambil data terbaru
         const selectQuery = `
-            SELECT partner_reff, amount, status, customer_name, created_at, qris_url, expired, created_at
+            SELECT partner_reff, amount, status, customer_name, qris_url, expired, created_at
             FROM inquiry_qris
             WHERE customer_name = ?
             ORDER BY created_at DESC
@@ -566,27 +554,7 @@ app.get('/qr-list', async (req, res) => {
     }
 });
 
-cron.schedule('* * * * *', async () => {
-    const now = new Date();
-    const pad = n => n.toString().padStart(2, '0');
-    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
-    // Hapus VA expired
-    await db.query(`
-        DELETE FROM inquiry_va 
-        WHERE expired < ? 
-        AND status = 'PENDING'
-    `, [formatNow]);
-
-    // Hapus QRIS expired
-    await db.query(`
-        DELETE FROM inquiry_qris 
-        WHERE expired < ? 
-        AND status = 'PENDING'
-    `, [formatNow]);
-
-    console.log("VA & QRIS expired dibersihkan");
-});
 
 
 const PORT = 3000;
