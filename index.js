@@ -263,18 +263,22 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
 
     try {
-        const [results] = await db.execute(
+        const db = await mysql.createConnection(dbConfig);
+
+        // 1️⃣ Cek apakah QR sudah ada di DB
+        const [check] = await db.execute(
             'SELECT qris_image FROM inquiry_qris WHERE partner_reff = ?',
             [partner_reff]
         );
 
-        if (results.length > 0 && results[0].qris_image) {
-            // Sudah ada di DB → kirim langsung
+        if (check.length > 0 && check[0].qris_image) {
+            console.log(`✅ QR ditemukan di database: ${partner_reff}`);
+            res.setHeader('Content-Disposition', `attachment; filename="qris-${partner_reff}.png"`);
             res.setHeader('Content-Type', 'image/png');
-            return res.send(results[0].qris_image);
+            return res.send(check[0].qris_image);
         }
 
-        // Ambil dari URL kalau belum ada
+        // 2️⃣ Ambil URL QR dari DB
         const [rows] = await db.execute(
             'SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?',
             [partner_reff]
@@ -285,21 +289,26 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
         }
 
         const imageUrl = rows[0].qris_url.trim();
+        console.log(`🔗 Download QR dari URL: ${imageUrl}`);
+
+        // 3️⃣ Download gambar sebagai buffer
         const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
         const buffer = Buffer.from(response.data);
 
-        // Simpan buffer gambar ke DB
+        // 4️⃣ Simpan ke DB
         await db.execute(
             'UPDATE inquiry_qris SET qris_image = ? WHERE partner_reff = ?',
             [buffer, partner_reff]
         );
+        console.log(`💾 QR disimpan di database: ${partner_reff}`);
 
-        // Kirim ke client
+        // 5️⃣ Kirim ke user dengan force download
+        res.setHeader('Content-Disposition', `attachment; filename="qris-${partner_reff}.png"`);
         res.setHeader('Content-Type', 'image/png');
         res.send(buffer);
 
     } catch (err) {
-        console.error(err);
+        console.error(`❌ Error: ${err.message}`);
         res.status(500).send('Terjadi kesalahan server.');
     }
 });
