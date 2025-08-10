@@ -490,35 +490,36 @@ async function updateInquiryStatusQris(partnerReff) {
 
 
 
-// ----------------- VA LIST -----------------
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
+
     if (!username) {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    // Format waktu sekarang ke YYYYMMDDHHmmss
+    // Format waktu sekarang ke YYYYMMDDHHMMSS
     const now = new Date();
     const pad = (n) => n.toString().padStart(2, '0');
     const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
     try {
-        // Hapus VA expired
-        await db.query(`
-            DELETE FROM inquiry_va
+        // Hapus data VA yang expired
+        const deleteQuery = `
+            DELETE FROM inquiry_va 
             WHERE expired < ?
               AND status = 'PENDING'
-        `, [formatNow]);
+        `;
+        await db.query(deleteQuery, [formatNow]);
 
         // Ambil data terbaru
-        const [results] = await db.query(`
-            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
-            FROM inquiry_va
-            WHERE customer_name = ?
-            ORDER BY created_at DESC
+        const selectQuery = `
+            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at	
+            FROM inquiry_va 
+            WHERE customer_name = ? 
+            ORDER BY created_at DESC 
             LIMIT 5
-        `, [username]);
-
+        `;
+        const [results] = await db.query(selectQuery, [username]);
         res.json(results);
     } catch (err) {
         console.error("DB error (va-list):", err.message);
@@ -527,7 +528,6 @@ app.get('/va-list', async (req, res) => {
 });
 
 
-// ----------------- QR LIST -----------------
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
 
@@ -535,35 +535,35 @@ app.get('/qr-list', async (req, res) => {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    // Format waktu sekarang ke YYYYMMDDHHmmss
+    // Format waktu sekarang ke YYYYMMDDHHMMSS
     const now = new Date();
     const pad = (n) => n.toString().padStart(2, '0');
     const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
     try {
         // Hapus QR expired
-        await db.query(`
-            DELETE FROM inquiry_qris
-            WHERE expired < ?
+        const deleteQuery = `
+            DELETE FROM inquiry_qris 
+            WHERE expired < ? 
               AND status = 'PENDING'
-        `, [formatNow]);
+        `;
+        await db.query(deleteQuery, [formatNow]);
 
         // Ambil data terbaru
-        const [results] = await db.query(`
-            SELECT partner_reff, amount, status, customer_name, qris_url, expired, created_at
+        const selectQuery = `
+            SELECT partner_reff, amount, status, customer_name, created_at, qris_url, expired, created_at
             FROM inquiry_qris
             WHERE customer_name = ?
             ORDER BY created_at DESC
             LIMIT 5
-        `, [username]);
-
+        `;
+        const [results] = await db.query(selectQuery, [username]);
         res.json(results);
     } catch (err) {
         console.error("DB error (qr-list):", err.message);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data QR" });
     }
 });
-
 
 
 
