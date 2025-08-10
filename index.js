@@ -503,19 +503,37 @@ app.get('/va-list', async (req, res) => {
     }
 
     const formatNow = getFormatNow();
+    console.log(`[VA-LIST] formatNow = ${formatNow}`);
 
     try {
-        // Hapus VA expired atau created_at > 15 menit
-        await db.query(`
+        // Cek data PENDING sebelum dihapus
+        const [beforeDelete] = await db.query(`
+            SELECT id, expired, created_at, status
+            FROM inquiry_va
+            WHERE status = 'PENDING'
+        `);
+        console.log("[VA-LIST] Data PENDING sebelum hapus:", beforeDelete);
+
+        // Hapus expired
+        const [deleteResult] = await db.query(`
             DELETE FROM inquiry_va
             WHERE status = 'PENDING'
               AND (
                     (expired IS NOT NULL AND expired <> '' AND expired < ?)
-                    OR (expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                    OR ((expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
                   )
         `, [formatNow]);
+        console.log(`[VA-LIST] Rows deleted = ${deleteResult.affectedRows}`);
 
-        // Ambil data terbaru
+        // Cek data PENDING setelah dihapus
+        const [afterDelete] = await db.query(`
+            SELECT id, expired, created_at, status
+            FROM inquiry_va
+            WHERE status = 'PENDING'
+        `);
+        console.log("[VA-LIST] Data PENDING setelah hapus:", afterDelete);
+
+        // Ambil data terbaru untuk user
         const [results] = await db.query(`
             SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
             FROM inquiry_va
@@ -526,12 +544,12 @@ app.get('/va-list', async (req, res) => {
 
         res.json(results);
     } catch (err) {
-        console.error("DB error (va-list):", err.message);
+        console.error("DB error (va-list):", err);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data VA" });
     }
 });
 
-// ================= QR LIST =================
+// ====== QR LIST ======
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
     if (!username) {
@@ -539,19 +557,37 @@ app.get('/qr-list', async (req, res) => {
     }
 
     const formatNow = getFormatNow();
+    console.log(`[QR-LIST] formatNow = ${formatNow}`);
 
     try {
-        // Hapus QR expired atau created_at > 15 menit
-        await db.query(`
+        // Cek data PENDING sebelum dihapus
+        const [beforeDelete] = await db.query(`
+            SELECT id, expired, created_at, status
+            FROM inquiry_qris
+            WHERE status = 'PENDING'
+        `);
+        console.log("[QR-LIST] Data PENDING sebelum hapus:", beforeDelete);
+
+        // Hapus expired
+        const [deleteResult] = await db.query(`
             DELETE FROM inquiry_qris
             WHERE status = 'PENDING'
               AND (
                     (expired IS NOT NULL AND expired <> '' AND expired < ?)
-                    OR (expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                    OR ((expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
                   )
         `, [formatNow]);
+        console.log(`[QR-LIST] Rows deleted = ${deleteResult.affectedRows}`);
 
-        // Ambil data terbaru
+        // Cek data PENDING setelah dihapus
+        const [afterDelete] = await db.query(`
+            SELECT id, expired, created_at, status
+            FROM inquiry_qris
+            WHERE status = 'PENDING'
+        `);
+        console.log("[QR-LIST] Data PENDING setelah hapus:", afterDelete);
+
+        // Ambil data terbaru untuk user
         const [results] = await db.query(`
             SELECT partner_reff, amount, status, customer_name, qris_url, expired, created_at
             FROM inquiry_qris
@@ -562,7 +598,7 @@ app.get('/qr-list', async (req, res) => {
 
         res.json(results);
     } catch (err) {
-        console.error("DB error (qr-list):", err.message);
+        console.error("DB error (qr-list):", err);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data QR" });
     }
 });
