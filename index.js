@@ -490,6 +490,7 @@ async function updateInquiryStatusQris(partnerReff) {
 
 
 
+// ----------------- VA LIST -----------------
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
 
@@ -498,23 +499,22 @@ app.get('/va-list', async (req, res) => {
     }
 
     try {
-        // Hapus VA yang sudah lebih dari 15 menit dari waktu dibuat
-        const deleteQuery = `
-            DELETE FROM inquiry_va 
-            WHERE created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
-              AND status = 'PENDING'
-        `;
-        await db.query(deleteQuery);
+        // Hapus data pending yang sudah lewat 15 menit
+        await db.query(`
+            DELETE FROM inquiry_va
+            WHERE status = 'PENDING'
+              AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        `);
 
         // Ambil data terbaru
-        const selectQuery = `
+        const [results] = await db.query(`
             SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
             FROM inquiry_va 
             WHERE customer_name = ? 
             ORDER BY created_at DESC 
             LIMIT 5
-        `;
-        const [results] = await db.query(selectQuery, [username]);
+        `, [username]);
+
         res.json(results);
     } catch (err) {
         console.error("DB error (va-list):", err.message);
@@ -522,6 +522,7 @@ app.get('/va-list', async (req, res) => {
     }
 });
 
+// ----------------- QR LIST -----------------
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
 
@@ -530,23 +531,22 @@ app.get('/qr-list', async (req, res) => {
     }
 
     try {
-        // Hapus QR yang sudah lebih dari 15 menit dari waktu dibuat
-        const deleteQuery = `
-            DELETE FROM inquiry_qris 
-            WHERE created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
-              AND status = 'PENDING'
-        `;
-        await db.query(deleteQuery);
+        // Hapus data pending yang sudah lewat 15 menit
+        await db.query(`
+            DELETE FROM inquiry_qris
+            WHERE status = 'PENDING'
+              AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        `);
 
         // Ambil data terbaru
-        const selectQuery = `
+        const [results] = await db.query(`
             SELECT partner_reff, amount, status, customer_name, qris_url, expired, created_at
             FROM inquiry_qris
             WHERE customer_name = ?
             ORDER BY created_at DESC
             LIMIT 5
-        `;
-        const [results] = await db.query(selectQuery, [username]);
+        `, [username]);
+
         res.json(results);
     } catch (err) {
         console.error("DB error (qr-list):", err.message);
