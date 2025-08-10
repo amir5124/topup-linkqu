@@ -181,7 +181,6 @@ app.post('/create-va', async (req, res) => {
 app.post('/create-qris', async (req, res) => {
     try {
         const body = req.body;
-
         console.log("📥 Incoming request body:", body);
 
         const partner_reff = generatePartnerReff();
@@ -225,11 +224,27 @@ app.post('/create-qris', async (req, res) => {
         const result = response.data;
         console.log("✅ API response from LinkQu:", result);
 
-        // 💾 Simpan ke MySQL dengan mysql2/promise
+        // 💾 Download QR image langsung
+        let qrisImageBuffer = null;
+        if (result?.imageqris) {
+            try {
+                console.log(`🌐 Downloading QR image from: ${result.imageqris}`);
+                const imgResp = await axios.get(result.imageqris.trim(), { responseType: 'arraybuffer' });
+                qrisImageBuffer = Buffer.from(imgResp.data);
+                console.log("✅ QR image downloaded successfully");
+            } catch (err) {
+                console.error("⚠️ Failed to download QRIS image:", err.message);
+            }
+        }
+
+        // 🕒 Gunakan waktu lokal server, bukan UTC
+        const now = new Date();
+        const mysqlDateTime = now.toISOString().slice(0, 19).replace('T', ' ');
+
         const insertQuery = `
             INSERT INTO inquiry_qris 
-            (partner_reff, customer_id, customer_name, amount, expired, customer_phone, customer_email, qris_url, response_raw, created_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'PENDING')
+            (partner_reff, customer_id, customer_name, amount, expired, customer_phone, customer_email, qris_url, qris_image, response_raw, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
         `;
 
         await db.execute(insertQuery, [
@@ -241,10 +256,12 @@ app.post('/create-qris', async (req, res) => {
             body.customer_phone || null,
             body.customer_email,
             result?.imageqris || null,
-            JSON.stringify(result)
+            qrisImageBuffer,
+            JSON.stringify(result),
+            mysqlDateTime
         ]);
 
-        console.log("✅ Data QRIS berhasil disimpan ke database.");
+        console.log(`✅ Data QRIS berhasil disimpan ke database dengan created_at = ${mysqlDateTime}`);
         res.json(result);
 
     } catch (err) {
@@ -264,6 +281,7 @@ app.post('/create-qris', async (req, res) => {
         });
     }
 });
+
 
 app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
