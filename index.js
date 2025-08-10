@@ -496,42 +496,45 @@ async function updateInquiryStatusQris(partnerReff) {
 
 
 
+// VA-LIST
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
     if (!username) {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    const formatNow = getFormatNow();
-    console.log(`[VA-LIST] formatNow = ${formatNow}`);
-
     try {
-        // Cek data PENDING sebelum dihapus
-        const [beforeDelete] = await db.query(`
+        console.log("\n[VA-LIST] Mulai proses...");
+
+        // Format waktu sekarang untuk log
+        const now = new Date();
+        const pad = (n) => n.toString().padStart(2, '0');
+        const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        console.log(`[VA-LIST] formatNow = ${formatNow}`);
+
+        // Ambil data pending sebelum hapus
+        const [pendingBefore] = await db.query(`
             SELECT id, expired, created_at, status
             FROM inquiry_va
             WHERE status = 'PENDING'
         `);
-        console.log("[VA-LIST] Data PENDING sebelum hapus:", beforeDelete);
+        console.log("[VA-LIST] Data PENDING sebelum hapus:", pendingBefore);
 
-        // Hapus expired
+        // Hapus data PENDING lebih dari 15 menit
         const [deleteResult] = await db.query(`
             DELETE FROM inquiry_va
             WHERE status = 'PENDING'
-              AND (
-                    (expired IS NOT NULL AND expired <> '' AND expired < ?)
-                    OR ((expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
-                  )
-        `, [formatNow]);
+              AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        `);
         console.log(`[VA-LIST] Rows deleted = ${deleteResult.affectedRows}`);
 
-        // Cek data PENDING setelah dihapus
-        const [afterDelete] = await db.query(`
+        // Ambil data pending setelah hapus
+        const [pendingAfter] = await db.query(`
             SELECT id, expired, created_at, status
             FROM inquiry_va
             WHERE status = 'PENDING'
         `);
-        console.log("[VA-LIST] Data PENDING setelah hapus:", afterDelete);
+        console.log("[VA-LIST] Data PENDING setelah hapus:", pendingAfter);
 
         // Ambil data terbaru untuk user
         const [results] = await db.query(`
@@ -544,48 +547,50 @@ app.get('/va-list', async (req, res) => {
 
         res.json(results);
     } catch (err) {
-        console.error("DB error (va-list):", err);
+        console.error("DB error (va-list):", err.message);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data VA" });
     }
 });
 
-// ====== QR LIST ======
+
+// QR-LIST
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
     if (!username) {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    const formatNow = getFormatNow();
-    console.log(`[QR-LIST] formatNow = ${formatNow}`);
-
     try {
-        // Cek data PENDING sebelum dihapus
-        const [beforeDelete] = await db.query(`
+        console.log("\n[QR-LIST] Mulai proses...");
+
+        const now = new Date();
+        const pad = (n) => n.toString().padStart(2, '0');
+        const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        console.log(`[QR-LIST] formatNow = ${formatNow}`);
+
+        // Ambil data pending sebelum hapus
+        const [pendingBefore] = await db.query(`
             SELECT id, expired, created_at, status
             FROM inquiry_qris
             WHERE status = 'PENDING'
         `);
-        console.log("[QR-LIST] Data PENDING sebelum hapus:", beforeDelete);
+        console.log("[QR-LIST] Data PENDING sebelum hapus:", pendingBefore);
 
-        // Hapus expired
+        // Hapus data PENDING lebih dari 15 menit
         const [deleteResult] = await db.query(`
             DELETE FROM inquiry_qris
             WHERE status = 'PENDING'
-              AND (
-                    (expired IS NOT NULL AND expired <> '' AND expired < ?)
-                    OR ((expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE))
-                  )
-        `, [formatNow]);
+              AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        `);
         console.log(`[QR-LIST] Rows deleted = ${deleteResult.affectedRows}`);
 
-        // Cek data PENDING setelah dihapus
-        const [afterDelete] = await db.query(`
+        // Ambil data pending setelah hapus
+        const [pendingAfter] = await db.query(`
             SELECT id, expired, created_at, status
             FROM inquiry_qris
             WHERE status = 'PENDING'
         `);
-        console.log("[QR-LIST] Data PENDING setelah hapus:", afterDelete);
+        console.log("[QR-LIST] Data PENDING setelah hapus:", pendingAfter);
 
         // Ambil data terbaru untuk user
         const [results] = await db.query(`
@@ -598,10 +603,11 @@ app.get('/qr-list', async (req, res) => {
 
         res.json(results);
     } catch (err) {
-        console.error("DB error (qr-list):", err);
+        console.error("DB error (qr-list):", err.message);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data QR" });
     }
 });
+
 
 
 
