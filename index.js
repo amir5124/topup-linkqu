@@ -50,6 +50,12 @@ function getExpiredTimestamp(minutesFromNow = 15) {
     return moment.tz('Asia/Jakarta').add(minutesFromNow, 'minutes').format('YYYYMMDDHHmmss');
 }
 
+const getFormatNow = () => {
+    const now = new Date();
+    const pad = (n) => n.toString().padStart(2, '0');
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+};
+
 // 🔐 Fungsi membuat signature untuk request POST VA
 function generateSignaturePOST({
     amount,
@@ -492,34 +498,32 @@ async function updateInquiryStatusQris(partnerReff) {
 
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
-
     if (!username) {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    // Format waktu sekarang ke YYYYMMDDHHMMSS
-    const now = new Date();
-    const pad = (n) => n.toString().padStart(2, '0');
-    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const formatNow = getFormatNow();
 
     try {
-        // Hapus data VA yang expired
-        const deleteQuery = `
-            DELETE FROM inquiry_va 
-            WHERE expired < ?
-              AND status = 'PENDING'
-        `;
-        await db.query(deleteQuery, [formatNow]);
+        // Hapus VA expired atau created_at > 15 menit
+        await db.query(`
+            DELETE FROM inquiry_va
+            WHERE status = 'PENDING'
+              AND (
+                    (expired IS NOT NULL AND expired <> '' AND expired < ?)
+                    OR (expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                  )
+        `, [formatNow]);
 
         // Ambil data terbaru
-        const selectQuery = `
-            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at	
-            FROM inquiry_va 
-            WHERE customer_name = ? 
-            ORDER BY created_at DESC 
+        const [results] = await db.query(`
+            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
+            FROM inquiry_va
+            WHERE customer_name = ?
+            ORDER BY created_at DESC
             LIMIT 5
-        `;
-        const [results] = await db.query(selectQuery, [username]);
+        `, [username]);
+
         res.json(results);
     } catch (err) {
         console.error("DB error (va-list):", err.message);
@@ -527,44 +531,41 @@ app.get('/va-list', async (req, res) => {
     }
 });
 
-
+// ================= QR LIST =================
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
-
     if (!username) {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
-    // Format waktu sekarang ke YYYYMMDDHHMMSS
-    const now = new Date();
-    const pad = (n) => n.toString().padStart(2, '0');
-    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const formatNow = getFormatNow();
 
     try {
-        // Hapus QR expired
-        const deleteQuery = `
-            DELETE FROM inquiry_qris 
-            WHERE expired < ? 
-              AND status = 'PENDING'
-        `;
-        await db.query(deleteQuery, [formatNow]);
+        // Hapus QR expired atau created_at > 15 menit
+        await db.query(`
+            DELETE FROM inquiry_qris
+            WHERE status = 'PENDING'
+              AND (
+                    (expired IS NOT NULL AND expired <> '' AND expired < ?)
+                    OR (expired IS NULL OR expired = '') AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+                  )
+        `, [formatNow]);
 
         // Ambil data terbaru
-        const selectQuery = `
-            SELECT partner_reff, amount, status, customer_name, created_at, qris_url, expired, created_at
+        const [results] = await db.query(`
+            SELECT partner_reff, amount, status, customer_name, qris_url, expired, created_at
             FROM inquiry_qris
             WHERE customer_name = ?
             ORDER BY created_at DESC
             LIMIT 5
-        `;
-        const [results] = await db.query(selectQuery, [username]);
+        `, [username]);
+
         res.json(results);
     } catch (err) {
         console.error("DB error (qr-list):", err.message);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data QR" });
     }
 });
-
 
 
 
