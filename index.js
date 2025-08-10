@@ -493,25 +493,29 @@ async function updateInquiryStatusQris(partnerReff) {
 // ----------------- VA LIST -----------------
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
-
     if (!username) {
         return res.status(400).json({ error: "Username diperlukan" });
     }
 
+    // Format waktu sekarang ke YYYYMMDDHHmmss
+    const now = new Date();
+    const pad = (n) => n.toString().padStart(2, '0');
+    const formatNow = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+
     try {
-        // Hapus data pending yang sudah lewat 15 menit
+        // Hapus VA expired
         await db.query(`
             DELETE FROM inquiry_va
-            WHERE status = 'PENDING'
-              AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
-        `);
+            WHERE expired < ?
+              AND status = 'PENDING'
+        `, [formatNow]);
 
         // Ambil data terbaru
         const [results] = await db.query(`
             SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
-            FROM inquiry_va 
-            WHERE customer_name = ? 
-            ORDER BY created_at DESC 
+            FROM inquiry_va
+            WHERE customer_name = ?
+            ORDER BY created_at DESC
             LIMIT 5
         `, [username]);
 
@@ -521,6 +525,7 @@ app.get('/va-list', async (req, res) => {
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data VA" });
     }
 });
+
 
 // ----------------- QR LIST -----------------
 app.get('/qr-list', async (req, res) => {
