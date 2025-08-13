@@ -118,6 +118,7 @@ app.post('/create-va', async (req, res) => {
         const body = req.body;
         const partner_reff = generatePartnerReff();
         const expired = getExpiredTimestamp();
+        const url_callback = "https://topuplinku.siappgo.id/callback";
 
         console.log("🆔 Generated partner_reff:", partner_reff, "| expired:", expired);
 
@@ -141,7 +142,8 @@ app.post('/create-va', async (req, res) => {
             username,
             pin,
             expired,
-            signature
+            signature,
+            url_callback
         };
 
         const headers = {
@@ -201,6 +203,7 @@ app.post('/create-qris', async (req, res) => {
 
         const partner_reff = generatePartnerReff();
         const expired = getExpiredTimestamp();
+        const url_callback = "https://topuplinku.siappgo.id/callback";
 
         console.log("🧾 Generated partner_reff:", partner_reff);
         console.log("⏳ Expired timestamp:", expired);
@@ -224,7 +227,8 @@ app.post('/create-qris', async (req, res) => {
             username,
             pin,
             expired,
-            signature
+            signature,
+            url_callback
         };
 
         console.log("📦 Final payload to API:", payload);
