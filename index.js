@@ -113,9 +113,13 @@ function generatePartnerReff() {
 // ✅ Endpoint POST untuk membuat VA
 app.post('/create-va', async (req, res) => {
     try {
+        logToFile(`📩 Request Body: ${JSON.stringify(req.body)}`);
+
         const body = req.body;
         const partner_reff = generatePartnerReff();
         const expired = getExpiredTimestamp();
+
+        logToFile(`🆔 Generated partner_reff: ${partner_reff}, expired: ${expired}`);
 
         const signature = generateSignaturePOST({
             amount: body.amount,
@@ -128,6 +132,8 @@ app.post('/create-va', async (req, res) => {
             clientId,
             serverKey
         });
+
+        logToFile(`🔑 Generated signature: ${signature}`);
 
         const payload = {
             ...body,
@@ -143,11 +149,15 @@ app.post('/create-va', async (req, res) => {
             'client-secret': clientSecret
         };
 
+        logToFile(`📤 Sending request to LinkQu: ${JSON.stringify(payload)}, Headers: ${JSON.stringify(headers)}`);
+
         const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/va';
         const response = await axios.post(url, payload, { headers });
         const result = response.data;
 
-        // 🐘 Simpan ke DB dengan await
+        logToFile(`✅ Response from LinkQu: ${JSON.stringify(result)}`);
+
+        // 🐘 Simpan ke DB
         const insertData = {
             partner_reff,
             customer_id: body.customer_id,
@@ -164,17 +174,19 @@ app.post('/create-va', async (req, res) => {
         };
 
         await db.query('INSERT INTO inquiry_va SET ?', [insertData]);
+        logToFile(`💾 Data inserted to DB: ${JSON.stringify(insertData)}`);
 
         res.json(result);
     } catch (err) {
+        logToFile(`❌ Error: ${err.message} | Detail: ${JSON.stringify(err.response?.data || {})}`);
         console.error('❌ Gagal membuat VA:', err.message);
+
         res.status(500).json({
             error: "Gagal membuat VA",
             detail: err.response?.data || err.message
         });
     }
 });
-
 
 
 
