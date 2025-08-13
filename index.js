@@ -16,8 +16,8 @@ app.use(express.json());
 // 🔐 Konfigurasi kredensial
 const clientId = "5f5aa496-7e16-4ca1-9967-33c768dac6c7";
 const clientSecret = "TM1rVhfaFm5YJxKruHo0nWMWC";
-const username = "LI504NUNN";
-const pin = "Ag7QKv4ZAnOeliF";
+const username = "LI9019VKS";
+const pin = "5m6uYAScSxQtCmU";
 const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
 
 
