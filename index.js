@@ -14,11 +14,11 @@ app.use(cors());
 app.use(express.json());
 
 // 🔐 Konfigurasi kredensial
-const clientId = "685c857c-8edb-4a3c-a800-c27980d23216";
-const clientSecret = "si8bWoYZ59TvwhMwbWb7MNssM";
+const clientId = "5f5aa496-7e16-4ca1-9967-33c768dac6c7";
+const clientSecret = "TM1rVhfaFm5YJxKruHo0nWMWC";
 const username = "LI504NUNN";
 const pin = "Ag7QKv4ZAnOeliF";
-const serverKey = "Io5cT4CBgI5GZY3TEI2hgelk";
+const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
 
 
 const db = mysql.createPool({
