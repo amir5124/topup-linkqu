@@ -113,13 +113,13 @@ function generatePartnerReff() {
 // ✅ Endpoint POST untuk membuat VA
 app.post('/create-va', async (req, res) => {
     try {
-        logToFile(`📩 Request Body: ${JSON.stringify(req.body)}`);
+        console.log("📩 Request Body:", req.body);
 
         const body = req.body;
         const partner_reff = generatePartnerReff();
         const expired = getExpiredTimestamp();
 
-        logToFile(`🆔 Generated partner_reff: ${partner_reff}, expired: ${expired}`);
+        console.log("🆔 Generated partner_reff:", partner_reff, "| expired:", expired);
 
         const signature = generateSignaturePOST({
             amount: body.amount,
@@ -133,7 +133,7 @@ app.post('/create-va', async (req, res) => {
             serverKey
         });
 
-        logToFile(`🔑 Generated signature: ${signature}`);
+        console.log("🔑 Generated signature:", signature);
 
         const payload = {
             ...body,
@@ -149,13 +149,15 @@ app.post('/create-va', async (req, res) => {
             'client-secret': clientSecret
         };
 
-        logToFile(`📤 Sending request to LinkQu: ${JSON.stringify(payload)}, Headers: ${JSON.stringify(headers)}`);
+        console.log("📤 Sending request to LinkQu:");
+        console.log("Payload:", payload);
+        console.log("Headers:", headers);
 
         const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/va';
         const response = await axios.post(url, payload, { headers });
         const result = response.data;
 
-        logToFile(`✅ Response from LinkQu: ${JSON.stringify(result)}`);
+        console.log("✅ Response from LinkQu:", result);
 
         // 🐘 Simpan ke DB
         const insertData = {
@@ -173,13 +175,14 @@ app.post('/create-va', async (req, res) => {
             status: "PENDING"
         };
 
+        console.log("💾 Insert to DB:", insertData);
+
         await db.query('INSERT INTO inquiry_va SET ?', [insertData]);
-        logToFile(`💾 Data inserted to DB: ${JSON.stringify(insertData)}`);
 
         res.json(result);
     } catch (err) {
-        logToFile(`❌ Error: ${err.message} | Detail: ${JSON.stringify(err.response?.data || {})}`);
-        console.error('❌ Gagal membuat VA:', err.message);
+        console.error("❌ Gagal membuat VA:", err.message);
+        console.error("Detail error:", err.response?.data || err);
 
         res.status(500).json({
             error: "Gagal membuat VA",
@@ -187,6 +190,7 @@ app.post('/create-va', async (req, res) => {
         });
     }
 });
+
 
 
 
