@@ -406,7 +406,7 @@ app.post('/create-retail', async (req, res) => {
 
         const insertQuery = `
             INSERT INTO inquiry_retail 
-            (partner_reff, customer_id, customer_name, amount, expired, bank_code, customer_phone, customer_email, payment_code, response_raw, created_at, status)
+            (partner_reff, customer_id, customer_name, amount, expired, bank_code, customer_phone, customer_email, retail_code, response_raw, created_at, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
         `;
 
