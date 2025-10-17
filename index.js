@@ -796,8 +796,8 @@ app.get('/retail-list', async (req, res) => {
 
         const [results] = await db.query(`
             SELECT 
-                bank_code, 
-                retail_code, 
+               bank_code AS retail_code,
+               retail_code AS payment_code,
                 amount, 
                 status, 
                 customer_name, 
