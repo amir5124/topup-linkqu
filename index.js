@@ -578,9 +578,8 @@ app.post('/callback', async (req, res) => {
         const {
             partner_reff,
             amount,
-            va_number,
-            customer_name,
             va_code,
+            customer_name,
             serialnumber
         } = req.body;
 
@@ -588,9 +587,24 @@ app.post('/callback', async (req, res) => {
         console.log(logMsg);
         logToFile(logMsg);
 
-        let currentStatus;
+        let methodType;
+
+        // Daftar kode retail yang didukung. Tambahkan jika ada kode retail lain.
+        const RETAIL_CODES = ['ALFAMART', 'INDOMARET'];
+
         if (va_code === 'QRIS') {
+            methodType = 'QRIS';
+        } else if (RETAIL_CODES.includes(va_code)) {
+            methodType = 'RETAIL';
+        } else {
+            methodType = 'VA';
+        }
+
+        let currentStatus;
+        if (methodType === 'QRIS') {
             currentStatus = await getCurrentStatusQris(partner_reff);
+        } else if (methodType === 'RETAIL') {
+            currentStatus = await getCurrentStatusRetail(partner_reff);
         } else {
             currentStatus = await getCurrentStatusVa(partner_reff);
         }
@@ -600,12 +614,12 @@ app.post('/callback', async (req, res) => {
             return res.json({ message: "Transaksi sudah SUKSES sebelumnya. Tidak diproses ulang." });
         }
 
-        // Jalankan fungsi penambahan saldo
         await addBalance(amount, customer_name, va_code, serialnumber);
 
-        // Update status setelah saldo ditambahkan
-        if (va_code === 'QRIS') {
+        if (methodType === 'QRIS') {
             await updateInquiryStatusQris(partner_reff);
+        } else if (methodType === 'RETAIL') {
+            await updateInquiryStatusRetail(partner_reff);
         } else {
             await updateInquiryStatus(partner_reff);
         }
@@ -620,7 +634,32 @@ app.post('/callback', async (req, res) => {
     }
 });
 
-// ✅ Fungsi ambil status dari inquiry_va
+async function getCurrentStatusRetail(partnerReff) {
+    try {
+        const [rows] = await db.execute(
+            'SELECT status FROM inquiry_retail WHERE partner_reff = ?',
+            [partnerReff]
+        );
+        return rows.length > 0 ? rows[0].status : null;
+    } catch (error) {
+        console.error(`❌ Gagal cek status inquiry_retail: ${error.message}`);
+        throw error;
+    }
+}
+
+async function updateInquiryStatusRetail(partnerReff) {
+    try {
+        await db.execute(
+            'UPDATE inquiry_retail SET status = ? WHERE partner_reff = ?',
+            ['SUKSES', partnerReff]
+        );
+        console.log(`✅ Status inquiry_retail untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
+    } catch (error) {
+        console.error(`❌ Gagal update status inquiry_retail: ${error.message}`);
+        throw error;
+    }
+}
+
 async function getCurrentStatusVa(partnerReff) {
     try {
         const [rows] = await db.execute(
@@ -634,7 +673,6 @@ async function getCurrentStatusVa(partnerReff) {
     }
 }
 
-// ✅ Fungsi ambil status dari inquiry_qris
 async function getCurrentStatusQris(partnerReff) {
     try {
         const [rows] = await db.execute(
@@ -648,7 +686,6 @@ async function getCurrentStatusQris(partnerReff) {
     }
 }
 
-// ✅ Update status SUKSES untuk inquiry_va
 async function updateInquiryStatus(partnerReff) {
     try {
         await db.execute(
@@ -662,7 +699,6 @@ async function updateInquiryStatus(partnerReff) {
     }
 }
 
-// ✅ Update status SUKSES untuk inquiry_qris
 async function updateInquiryStatusQris(partnerReff) {
     try {
         await db.execute(
@@ -720,6 +756,64 @@ app.get('/va-list', async (req, res) => {
     } catch (err) {
         console.error("DB error (va-list):", err.message);
         res.status(500).json({ error: "Terjadi kesalahan saat mengambil data VA" });
+    }
+});
+
+app.get('/retail-list', async (req, res) => {
+    const { username } = req.query;
+    if (!username) {
+        return res.status(400).json({ error: "Username diperlukan" });
+    }
+
+    try {
+        // --- 1. Hapus Transaksi PENDING yang Kedaluwarsa (Lebih dari 15 Menit) ---
+        // Ambil semua data PENDING
+        const [pendingBefore] = await db.query(`
+            SELECT id, created_at
+            FROM inquiry_retail
+            WHERE status = 'PENDING'
+        `);
+
+        console.log("[RETAIL-LIST] Data PENDING sebelum cek expired:", pendingBefore.length);
+
+        const now = Date.now();
+        // Asumsi batas waktu kedaluwarsa adalah 15 menit (15 * 60 * 1000 ms)
+        const fifteenMinutes = 15 * 60 * 1000;
+
+        // Filter ID yang sudah melewati 15 menit dari created_at
+        const idsToDelete = pendingBefore
+            .filter(row => now - new Date(row.created_at).getTime() > fifteenMinutes)
+            .map(row => row.id);
+
+        if (idsToDelete.length > 0) {
+            await db.query(`DELETE FROM inquiry_retail WHERE id IN (?)`, [idsToDelete]);
+        }
+
+        console.log(`[RETAIL-LIST] Jumlah baris PENDING yang dihapus: ${idsToDelete.length}`);
+
+        // --- 2. Ambil Data Transaksi Retail Terbaru ---
+        // Kolom yang ditampilkan: bank_code (Gerai), retail_code (Kode Bayar - asumsi Anda menggunakan ini), amount, status, created_at, expired.
+
+        const [results] = await db.query(`
+            SELECT 
+                bank_code, 
+                retail_code, 
+                amount, 
+                status, 
+                customer_name, 
+                expired, 
+                created_at
+            FROM inquiry_retail
+            WHERE customer_name = ?
+            ORDER BY created_at DESC
+            LIMIT 5
+        `, [username]);
+
+        console.log(`[RETAIL-LIST] Mengirim ${results.length} transaksi retail terbaru.`);
+        res.json(results);
+    } catch (err) {
+        console.error("DB error (retail-list):", err.message);
+        res.status(500).json({ error: "Terjadi kesalahan saat mengambil data Retail" });
     }
 });
 
