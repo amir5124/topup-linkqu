@@ -504,9 +504,15 @@ async function addBalance(amount, customer_name, va_code, serialnumber) {
 
         // Hitung admin dan negativeAmount sesuai metode
         let admin;
+
         if (va_code === "QRIS") {
-            admin = Math.round(originalAmount * 0.008); // 0.8% dibulatkan
+            // Biaya admin QRIS (0.8%)
+            admin = Math.round(originalAmount * 0.008);
+        } else if (va_code === "RETAIL") {
+            // Biaya admin RETAIL (POTONGAN KHUSUS)
+            admin = 2000;
         } else {
+            // Biaya admin Default (misalnya VA Bank lainnya)
             admin = 2500;
         }
 
