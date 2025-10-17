@@ -419,7 +419,7 @@ app.post('/create-retail', async (req, res) => {
             retail_code,
             body.customer_phone || null,
             body.customer_email,
-            result?.paymentcode || null, // Simpan Payment Code (misal: kode bayar Indomaret/Alfamart)
+            result?.payment_code || null, // Simpan Payment Code (misal: kode bayar Indomaret/Alfamart)
             JSON.stringify(result),
             mysqlDateTime
         ]);
