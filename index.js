@@ -31,19 +31,20 @@ const db = mysql.createPool({
     queueLimit: 0
 });
 
-// Pengecekan koneksi tetap bisa pakai cara ini:
-db.getConnection((err, conn) => {
-    if (err) {
-        console.error('❌ [DB Error]:', err.message);
-    } else {
+// Pengecekan koneksi versi PROMISE (Async/Await)
+(async () => {
+    try {
+        const conn = await db.getConnection();
         console.log('✅ [DB Success]: Koneksi Berhasil!');
         conn.release();
+    } catch (err) {
+        console.error('❌ [DB Error]:', err.message);
     }
-});
+})();
 
-// Ini baru bisa jalan kalau pakai mysql2
-module.exports = db.promise();
-// 📝 Fungsi untuk menulis log ke stderr.log
+// JANGAN gunakan db.promise() lagi di bawah ini jika import sudah /promise
+module.exports = db;
+
 function logToFile(message) {
     const logPath = path.join(__dirname, 'stderr.log');
     const timestamp = new Date().toISOString();
