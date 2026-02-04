@@ -28,26 +28,52 @@ const db = mysql.createPool({
     database: process.env.DB_NAME || 'topup',
     waitForConnections: true,
     connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10,
-    queueLimit: 0
+    queueLimit: 0,
+    // Tambahkan ini untuk mencegah hang saat DNS bermasalah
+    connectTimeout: 10000
 });
 
-// --- LOGGING STATUS KONEKSI ---
+// 2. Logging Event Pool (Untuk memantau aktivitas)
+db.on('connection', (connection) => {
+    console.log('🔌 [DB Pool]: Koneksi baru dibuat');
+});
 
-// 1. Cek koneksi awal saat startup
-db.getConnection((err, connection) => {
-    if (err) {
+db.on('error', (err) => {
+    console.error('🚨 [DB Pool Error]:', err.message);
+});
+
+// 3. Fungsi Cek Koneksi (Pasti Muncul di Log)
+async function checkDatabaseConnection() {
+    console.log('⏳ [DB Status]: Sedang mencoba terhubung ke database...');
+
+    // Gunakan versi promise untuk pengecekan
+    const promisePool = db.promise();
+
+    try {
+        const [rows] = await promisePool.query('SELECT 1 + 1 AS result');
+        console.log('✅ [DB Success]: Koneksi Berhasil!');
+        console.log(`📡 [DB Info]: Host: ${process.env.DB_HOST || 'hco8kksk4k4cc088cockkk4g'}`);
+    } catch (err) {
         console.error('❌ [DB Error]: Gagal menyambung ke database!');
-        console.error('Detail:', {
-            host: process.env.DB_HOST || '31.97.48.240',
-            message: err.message
-        });
-    } else {
-        console.log('✅ [DB Success]: Berhasil terhubung ke database.');
-        console.log(`📡 [DB Info]: Menggunakan Host: ${process.env.DB_HOST || '31.97.48.240'}`);
-        connection.release(); // Kembalikan koneksi ke pool
-    }
-});
+        console.error('--- DETAIL ERROR ---');
+        console.error(`Code    : ${err.code}`);
+        console.error(`Message : ${err.message}`);
+        console.error(`Host    : ${process.env.DB_HOST || 'hco8kksk4k4cc088cockkk4g'}`);
+        console.error('--------------------');
 
+        // Memberikan saran berdasarkan error code
+        if (err.code === 'ER_ACCESS_DENIED_ERROR') {
+            console.error('💡 Saran: Cek kembali USER dan PASSWORD di Coolify.');
+        } else if (err.code === 'ETIMEDOUT' || err.code === 'EAI_AGAIN') {
+            console.error('💡 Saran: Cek NETWORK/Firewall atau Hostname.');
+        }
+    }
+}
+
+// Jalankan pengecekan
+checkDatabaseConnection();
+
+module.exports = db.promise();
 // 📝 Fungsi untuk menulis log ke stderr.log
 function logToFile(message) {
     const logPath = path.join(__dirname, 'stderr.log');
