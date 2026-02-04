@@ -31,20 +31,8 @@ const db = mysql.createPool({
     queueLimit: 0
 });
 
-// Pengecekan koneksi versi PROMISE (Async/Await)
-(async () => {
-    try {
-        const conn = await db.getConnection();
-        console.log('✅ [DB Success]: Koneksi Berhasil!');
-        conn.release();
-    } catch (err) {
-        console.error('❌ [DB Error]:', err.message);
-    }
-})();
 
-// JANGAN gunakan db.promise() lagi di bawah ini jika import sudah /promise
-module.exports = db;
-
+// 📝 Fungsi untuk menulis log ke stderr.log
 function logToFile(message) {
     const logPath = path.join(__dirname, 'stderr.log');
     const timestamp = new Date().toISOString();
