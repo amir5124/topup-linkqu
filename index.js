@@ -5,7 +5,7 @@ const cors = require('cors');
 const moment = require('moment-timezone');
 const fs = require('fs');
 const path = require('path');
-const mysql = require('mysql2'); const mysql = require('mysql2/promise');
+const mysql = require('mysql2/promise');
 const FormData = require('form-data');
 
 
