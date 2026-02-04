@@ -22,7 +22,7 @@ const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
 
 
 const db = mysql.createPool({
-    host: process.env.DB_HOST || 'mysql-database-hco8kksk4k4cc088cockkk4g',
+    host: process.env.DB_HOST || 'hco8kksk4k4cc088cockkk4g',
     user: process.env.DB_USER || 'mysql',
     password: process.env.DB_PASSWORD || 'uZ4RH8Ef7vynMciS9QEbLlTDpCL2Z4tdMR55owuSasccnbYjoXUdRq04V5RauZp2',
     database: process.env.DB_NAME || 'topup',
