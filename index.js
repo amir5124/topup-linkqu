@@ -5,7 +5,7 @@ const cors = require('cors');
 const moment = require('moment-timezone');
 const fs = require('fs');
 const path = require('path');
-const mysql = require('mysql2/promise');
+const mysql = require('mysql2');
 const FormData = require('form-data');
 
 
@@ -27,52 +27,21 @@ const db = mysql.createPool({
     password: process.env.DB_PASSWORD || 'uZ4RH8Ef7vynMciS9QEbLlTDpCL2Z4tdMR55owuSasccnbYjoXUdRq04V5RauZp2',
     database: process.env.DB_NAME || 'topup',
     waitForConnections: true,
-    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10,
-    queueLimit: 0,
-    // Tambahkan ini untuk mencegah hang saat DNS bermasalah
-    connectTimeout: 10000
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-// 2. Logging Event Pool (Untuk memantau aktivitas)
-db.on('connection', (connection) => {
-    console.log('🔌 [DB Pool]: Koneksi baru dibuat');
-});
-
-db.on('error', (err) => {
-    console.error('🚨 [DB Pool Error]:', err.message);
-});
-
-// 3. Fungsi Cek Koneksi (Pasti Muncul di Log)
-async function checkDatabaseConnection() {
-    console.log('⏳ [DB Status]: Sedang mencoba terhubung ke database...');
-
-    // Gunakan versi promise untuk pengecekan
-    const promisePool = db.promise();
-
-    try {
-        const [rows] = await promisePool.query('SELECT 1 + 1 AS result');
+// Pengecekan koneksi tetap bisa pakai cara ini:
+db.getConnection((err, conn) => {
+    if (err) {
+        console.error('❌ [DB Error]:', err.message);
+    } else {
         console.log('✅ [DB Success]: Koneksi Berhasil!');
-        console.log(`📡 [DB Info]: Host: ${process.env.DB_HOST || 'hco8kksk4k4cc088cockkk4g'}`);
-    } catch (err) {
-        console.error('❌ [DB Error]: Gagal menyambung ke database!');
-        console.error('--- DETAIL ERROR ---');
-        console.error(`Code    : ${err.code}`);
-        console.error(`Message : ${err.message}`);
-        console.error(`Host    : ${process.env.DB_HOST || 'hco8kksk4k4cc088cockkk4g'}`);
-        console.error('--------------------');
-
-        // Memberikan saran berdasarkan error code
-        if (err.code === 'ER_ACCESS_DENIED_ERROR') {
-            console.error('💡 Saran: Cek kembali USER dan PASSWORD di Coolify.');
-        } else if (err.code === 'ETIMEDOUT' || err.code === 'EAI_AGAIN') {
-            console.error('💡 Saran: Cek NETWORK/Firewall atau Hostname.');
-        }
+        conn.release();
     }
-}
+});
 
-// Jalankan pengecekan
-checkDatabaseConnection();
-
+// Ini baru bisa jalan kalau pakai mysql2
 module.exports = db.promise();
 // 📝 Fungsi untuk menulis log ke stderr.log
 function logToFile(message) {
