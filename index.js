@@ -22,15 +22,31 @@ const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
 
 
 const db = mysql.createPool({
-    host: 'linku.co.id',
-    user: 'linkucoi_linkqu_user',
-    password: 'Zulfaku$01',
-    database: 'linkucoi_linkqu_db',
+    host: process.env.DB_HOST || '31.97.48.240',
+    user: process.env.DB_USER || 'mysql',
+    password: process.env.DB_PASSWORD || 'uZ4RH8Ef7vynMciS9QEbLlTDpCL2Z4tdMR55owuSasccnbYjoXUdRq04V5RauZp2',
+    database: process.env.DB_NAME || 'topup',
     waitForConnections: true,
-    connectionLimit: 10,
+    connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT) || 10,
     queueLimit: 0
 });
 
+// --- LOGGING STATUS KONEKSI ---
+
+// 1. Cek koneksi awal saat startup
+db.getConnection((err, connection) => {
+    if (err) {
+        console.error('❌ [DB Error]: Gagal menyambung ke database!');
+        console.error('Detail:', {
+            host: process.env.DB_HOST || '31.97.48.240',
+            message: err.message
+        });
+    } else {
+        console.log('✅ [DB Success]: Berhasil terhubung ke database.');
+        console.log(`📡 [DB Info]: Menggunakan Host: ${process.env.DB_HOST || '31.97.48.240'}`);
+        connection.release(); // Kembalikan koneksi ke pool
+    }
+});
 
 // 📝 Fungsi untuk menulis log ke stderr.log
 function logToFile(message) {
