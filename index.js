@@ -536,7 +536,7 @@ async function addBalance(amount, customer_name, va_code, serialnumber) {
 
         const config = {
             method: 'post',
-            url: 'https://linku.co.id/qris.php',
+            url: 'https://rtsindonesia.biz.id/qris.php',
             headers: {
                 ...formdata.getHeaders()
             },
