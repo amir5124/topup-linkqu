@@ -499,225 +499,136 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
 });
 
 async function addBalance(amount, customer_name, va_code, serialnumber) {
+    const originalAmount = parseInt(amount);
+    let admin;
+
+    // Logika perhitungan admin
+    if (va_code === "QRIS") {
+        admin = Math.round(originalAmount * 0.008);
+    } else if (va_code === "RETAIL") {
+        admin = 2000;
+    } else {
+        admin = 2500;
+    }
+
+    const negativeAmount = originalAmount - admin;
+    // Ambil nama terakhir untuk username
+    const username = customer_name.trim().split(" ").pop();
+
+    const formattedAmount = negativeAmount.toLocaleString('id-ID');
+    const formattedAdmin = admin.toLocaleString('id-ID');
+    const catatan = `Transaksi berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin} || metode ${va_code} || Biller Reff ${serialnumber}`;
+
+    // 1. Tambah Saldo ke RTS (External API)
+    const formdata = new FormData();
+    formdata.append("amount", negativeAmount);
+    formdata.append("username", username);
+    formdata.append("note", catatan);
+
     try {
-        const originalAmount = parseInt(amount);
+        const response = await axios.post('https://rtsindonesia.biz.id/qris.php', formdata, {
+            headers: formdata.getHeaders()
+        });
+        console.log("✅ RTS Response:", response.data);
 
-        // Hitung admin dan negativeAmount sesuai metode
-        let admin;
-
-        if (va_code === "QRIS") {
-            // Biaya admin QRIS (0.8%)
-            admin = Math.round(originalAmount * 0.008);
-        } else if (va_code === "RETAIL") {
-            // Biaya admin RETAIL (POTONGAN KHUSUS)
-            admin = 2000;
-        } else {
-            // Biaya admin Default (misalnya VA Bank lainnya)
-            admin = 2500;
+        // Asumsi: Jika RTS gagal, biasanya memberikan response status tertentu. 
+        // Sesuaikan pengecekan ini dengan format response rtsindonesia.biz.id
+        if (response.data.status === false) {
+            throw new Error("RTS API menolak penambahan saldo");
         }
 
-        const negativeAmount = originalAmount - admin;
+        // 2. Kirim Notifikasi Jagel (Async, jangan biarkan ini menggagalkan transaksi utama)
+        // Kita tidak pakai 'await' di sini agar response callback tetap cepat
+        axios.post("https://api.jagel.id/v1/message/send", {
+            type: "username",
+            value: username,
+            apikey: "FF6dKZ94S3SRB4jp3zc2UulCnH5bhLaMJ7sa3dz8wm1qj8ggqu",
+            content: catatan,
+        }).catch(err => console.error("⚠️ Jagel Notif Error (Ignored):", err.message));
 
-        // Ambil nama terakhir dari customer_name
-        const username = customer_name.trim().split(" ").pop();
-        console.log(username, "username")
-
-        // Format nominal ke format Indonesia
-        const formattedAmount = negativeAmount.toLocaleString('id-ID');
-        const formattedAdmin = admin.toLocaleString('id-ID');
-
-        // 📝 Catatan lengkap
-        const catatan = `Transaksi berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin}  || metode ${va_code} || Biller Reff ${serialnumber}`;
-
-        const formdata = new FormData();
-        formdata.append("amount", negativeAmount);
-        formdata.append("username", username);
-        formdata.append("note", catatan);
-
-        const config = {
-            method: 'post',
-            url: 'https://rtsindonesia.biz.id/qris.php',
-            headers: {
-                ...formdata.getHeaders()
-            },
-            data: formdata
-        };
-
-        const response = await axios(config);
-        console.log("✅ Saldo berhasil ditambahkan:", response.data);
-
-        // Kirim notifikasi ke pengguna
-        try {
-            const requestBody = {
-                type: "username",
-                value: username,
-                apikey: "FF6dKZ94S3SRB4jp3zc2UulCnH5bhLaMJ7sa3dz8wm1qj8ggqu",
-                content: catatan,
-            };
-
-            const resMsg = await axios.post("https://api.jagel.id/v1/message/send", requestBody, {
-                headers: { "Accept": "application/json" }
-            });
-
-            logToFile("📩 Pesan berhasil dikirim:", resMsg.data);
-        } catch (notifError) {
-            console.error("❌ Gagal mengirim notifikasi:", notifError.message);
-            logToFile("❌ Gagal mengirim notifikasi: " + notifError.message);
-        }
-
-        return {
-            status: true,
-            message: "Saldo berhasil ditambahkan",
-            data: { username, negativeAmount, catatan },
-            balanceResult: response.data,
-        };
+        return { username, negativeAmount, catatan };
 
     } catch (error) {
-        console.error("❌ Gagal menambahkan saldo:", error.message);
-        throw new Error("Gagal menambahkan saldo: " + error.message);
+        console.error("❌ Gagal di addBalance (RTS):", error.message);
+        throw error; // Lempar error agar ditangkap oleh catch di /callback (untuk rollback)
     }
 }
 
-// ✅ Route untuk menerima callback
 app.post('/callback', async (req, res) => {
+    const connection = await db.getConnection(); // Dapatkan koneksi dari pool
+
     try {
-        const {
-            partner_reff,
-            amount,
-            va_code,
-            customer_name,
-            serialnumber
-        } = req.body;
-
-        const logMsg = `✅ Callback diterima: ${JSON.stringify(req.body)}`;
-        console.log(logMsg);
-        logToFile(logMsg);
-
-        let methodType;
-
-        // Daftar kode retail yang didukung. Tambahkan jika ada kode retail lain.
+        const { partner_reff, amount, va_code, customer_name, serialnumber } = req.body;
         const RETAIL_CODES = ['ALFAMART', 'INDOMARET'];
 
-        if (va_code === 'QRIS') {
-            methodType = 'QRIS';
-        } else if (RETAIL_CODES.includes(va_code)) {
-            methodType = 'RETAIL';
-        } else {
-            methodType = 'VA';
+        // Tentukan tabel target
+        let tableName = 'inquiry_va';
+        if (va_code === 'QRIS') tableName = 'inquiry_qris';
+        else if (RETAIL_CODES.includes(va_code)) tableName = 'inquiry_retail';
+
+        // --- MULAI TRANSAKSI ---
+        await connection.beginTransaction();
+
+        // 1. LOCK & CHECK (Cegah Double Request di milidetik yang sama)
+        const [rows] = await connection.execute(
+            `SELECT status FROM ${tableName} WHERE partner_reff = ? FOR UPDATE`,
+            [partner_reff]
+        );
+
+        if (rows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ error: "Data transaksi tidak ditemukan" });
         }
 
-        let currentStatus;
-        if (methodType === 'QRIS') {
-            currentStatus = await getCurrentStatusQris(partner_reff);
-        } else if (methodType === 'RETAIL') {
-            currentStatus = await getCurrentStatusRetail(partner_reff);
-        } else {
-            currentStatus = await getCurrentStatusVa(partner_reff);
+        if (rows[0].status === 'SUKSES') {
+            await connection.rollback();
+            console.log(`ℹ️ Skip: ${partner_reff} sudah SUKSES.`);
+            return res.json({ message: "Sudah diproses sebelumnya." });
         }
 
-        if (currentStatus === 'SUKSES') {
-            console.log(`ℹ️ Transaksi ${partner_reff} sudah diproses sebelumnya.`);
-            return res.json({ message: "Transaksi sudah SUKSES sebelumnya. Tidak diproses ulang." });
-        }
+        // 2. UPDATE STATUS DULU (Status 'PENDING' -> 'PROSES')
+        // Ini memastikan jika addBalance lambat, request callback lain sudah melihat status bukan PENDING
+        await connection.execute(
+            `UPDATE ${tableName} SET status = 'SUKSES' WHERE partner_reff = ?`,
+            [partner_reff]
+        );
 
+        // 3. JALANKAN LOGIKA EKSTERNAL (RTS & Jagel)
+        // Jika ini gagal (throw error), maka status di DB akan kembali jadi PENDING (karena rollback)
         await addBalance(amount, customer_name, va_code, serialnumber);
 
-        if (methodType === 'QRIS') {
-            await updateInquiryStatusQris(partner_reff);
-        } else if (methodType === 'RETAIL') {
-            await updateInquiryStatusRetail(partner_reff);
-        } else {
-            await updateInquiryStatus(partner_reff);
-        }
+        // 4. COMMIT SEMUA
+        await connection.commit();
 
+        console.log(`🚀 Callback Berhasil: Saldo ${customer_name} ditambahkan.`);
         res.json({ message: "Callback diterima dan saldo ditambahkan" });
 
     } catch (err) {
-        const logMsg = `❌ Gagal memproses callback: ${err.message}`;
+        if (connection) await connection.rollback();
+
+        const logMsg = `❌ Callback Error [${req.body.partner_reff}]: ${err.message}`;
         console.error(logMsg);
         logToFile(logMsg);
-        res.status(500).json({ error: "Gagal memproses callback", detail: err.message });
+
+        res.status(500).json({ error: "Internal Server Error", detail: err.message });
+    } finally {
+        if (connection) connection.release(); // PENTING: Kembalikan koneksi ke pool!
     }
 });
 
-async function getCurrentStatusRetail(partnerReff) {
-    try {
-        const [rows] = await db.execute(
-            'SELECT status FROM inquiry_retail WHERE partner_reff = ?',
-            [partnerReff]
-        );
-        return rows.length > 0 ? rows[0].status : null;
-    } catch (error) {
-        console.error(`❌ Gagal cek status inquiry_retail: ${error.message}`);
-        throw error;
-    }
-}
 
-async function updateInquiryStatusRetail(partnerReff) {
+app.get('/check-status/:partnerReff', async (req, res) => {
+    const partner_reff = req.params.partnerReff;
     try {
-        await db.execute(
-            'UPDATE inquiry_retail SET status = ? WHERE partner_reff = ?',
-            ['SUKSES', partnerReff]
-        );
-        console.log(`✅ Status inquiry_retail untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
-    } catch (error) {
-        console.error(`❌ Gagal update status inquiry_retail: ${error.message}`);
-        throw error;
-    }
-}
-
-async function getCurrentStatusVa(partnerReff) {
-    try {
-        const [rows] = await db.execute(
-            'SELECT status FROM inquiry_va WHERE partner_reff = ?',
-            [partnerReff]
-        );
-        return rows.length > 0 ? rows[0].status : null;
-    } catch (error) {
-        console.error(`❌ Gagal cek status inquiry_va: ${error.message}`);
-        throw error;
-    }
-}
-
-async function getCurrentStatusQris(partnerReff) {
-    try {
-        const [rows] = await db.execute(
-            'SELECT status FROM inquiry_qris WHERE partner_reff = ?',
-            [partnerReff]
-        );
-        return rows.length > 0 ? rows[0].status : null;
-    } catch (error) {
-        console.error(`❌ Gagal cek status inquiry_qris: ${error.message}`);
-        throw error;
-    }
-}
-
-async function updateInquiryStatus(partnerReff) {
-    try {
-        await db.execute(
-            'UPDATE inquiry_va SET status = ? WHERE partner_reff = ?',
-            ['SUKSES', partnerReff]
-        );
-        console.log(`✅ Status inquiry_va untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
-    } catch (error) {
-        console.error(`❌ Gagal update status inquiry_va: ${error.message}`);
-        throw error;
-    }
-}
-
-async function updateInquiryStatusQris(partnerReff) {
-    try {
-        await db.execute(
-            'UPDATE inquiry_qris SET status = ? WHERE partner_reff = ?',
-            ['SUKSES', partnerReff]
-        );
-        console.log(`✅ Status inquiry_qris untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
-    } catch (error) {
-        console.error(`❌ Gagal update status inquiry_qris: ${error.message}`);
-        throw error;
-    }
-}
-
+        const response = await axios.get(`https://api.linkqu.id/linkqu-partner/transaction/payment/checkstatus`, {
+            params: { username, partnerreff: partner_reff }, headers: { 'client-id': clientId, 'client-secret': clientSecret }
+        });
+        if (response.data.status_code === '00') {
+            await db.execute(`UPDATE order_service SET order_status = 'PAID' WHERE order_reff = ?`, [partner_reff]);
+        }
+        res.json(response.data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 
 app.get('/va-list', async (req, res) => {
