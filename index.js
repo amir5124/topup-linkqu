@@ -498,11 +498,12 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
     }
 });
 
+
 async function addBalance(amount, customer_name, va_code, serialnumber) {
     const originalAmount = parseInt(amount);
     let admin;
 
-    // Logika perhitungan admin
+    // 1. Logika perhitungan biaya admin
     if (va_code === "QRIS") {
         admin = Math.round(originalAmount * 0.008);
     } else if (va_code === "RETAIL") {
@@ -511,46 +512,48 @@ async function addBalance(amount, customer_name, va_code, serialnumber) {
         admin = 2500;
     }
 
-    const negativeAmount = originalAmount - admin;
-    // Ambil nama terakhir untuk username
+    const netAmount = originalAmount - admin;
+    
+    // Ambil nama terakhir untuk username (sesuaikan dengan logic aplikasi Anda)
     const username = customer_name.trim().split(" ").pop();
 
-    const formattedAmount = negativeAmount.toLocaleString('id-ID');
+    const formattedAmount = netAmount.toLocaleString('id-ID');
     const formattedAdmin = admin.toLocaleString('id-ID');
-    const catatan = `Transaksi berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin} || metode ${va_code} || Biller Reff ${serialnumber}`;
-
-    // 1. Tambah Saldo ke RTS (External API)
-    const formdata = new FormData();
-    formdata.append("amount", negativeAmount);
-    formdata.append("username", username);
-    formdata.append("note", catatan);
+    const catatan = `✅ Topup Berhasil!\nNominal: Rp ${formattedAmount}\nBiaya Admin: Rp ${formattedAdmin}\nMetode: ${va_code}\nBiller Reff: ${serialnumber}`;
 
     try {
-        const response = await axios.post('https://rtsindonesia.biz.id/qris.php', formdata, {
-            headers: formdata.getHeaders()
+        // 2. Tambah Saldo ke RTS melalui adjust.php (Format JSON)
+        const rtsResponse = await axios.post('https://rtsindonesia.biz.id/adjust.php', {
+            action: 'adjust_balance',
+            value: username,
+            amount: netAmount, // Nilai positif untuk menambah saldo
+            note: catatan
+        }, {
+            headers: { 'Content-Type': 'application/json' }
         });
-        console.log("✅ RTS Response:", response.data);
 
-        // Asumsi: Jika RTS gagal, biasanya memberikan response status tertentu. 
-        // Sesuaikan pengecekan ini dengan format response rtsindonesia.biz.id
-        if (response.data.status === false) {
-            throw new Error("RTS API menolak penambahan saldo");
+        console.log(`[${username}] ✅ RTS Response:`, rtsResponse.data);
+
+        // Jika adjust.php mengembalikan success: false
+        if (rtsResponse.data && rtsResponse.data.success === false) {
+            throw new Error(`RTS API Error: ${rtsResponse.data.message}`);
         }
 
-        // 2. Kirim Notifikasi Jagel (Async, jangan biarkan ini menggagalkan transaksi utama)
-        // Kita tidak pakai 'await' di sini agar response callback tetap cepat
-        axios.post("https://api.jagel.id/v1/message/send", {
-            type: "username",
+        // 3. Kirim Notifikasi Chat Jagel (Fire & Forget)
+        // Gunakan adjust.php juga untuk kirim pesan agar terpusat
+        axios.post('https://rtsindonesia.biz.id/adjust.php', {
+            action: 'send_message',
             value: username,
-            apikey: "FF6dKZ94S3SRB4jp3zc2UulCnH5bhLaMJ7sa3dz8wm1qj8ggqu",
-            content: catatan,
+            content: catatan
+        }, {
+            headers: { 'Content-Type': 'application/json' }
         }).catch(err => console.error("⚠️ Jagel Notif Error (Ignored):", err.message));
 
-        return { username, negativeAmount, catatan };
+        return { username, netAmount, catatan };
 
     } catch (error) {
-        console.error("❌ Gagal di addBalance (RTS):", error.message);
-        throw error; // Lempar error agar ditangkap oleh catch di /callback (untuk rollback)
+        console.error(`❌ Gagal di addBalance (${username}):`, error.message);
+        throw error; // Lempar balik agar callback payment gateway tahu ada kegagalan
     }
 }
 
