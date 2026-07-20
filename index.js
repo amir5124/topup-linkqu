@@ -1,3 +1,5 @@
+'use strict';
+
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
@@ -8,152 +10,266 @@ const path = require('path');
 const mysql = require('mysql2/promise');
 const FormData = require('form-data');
 
-
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
-// 🔐 Konfigurasi kredensial
-const clientId = "5f5aa496-7e16-4ca1-9967-33c768dac6c7";
-const clientSecret = "TM1rVhfaFm5YJxKruHo0nWMWC";
-const username = "LI9019VKS";
-const pin = "5m6uYAScSxQtCmU";
-const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
+// ============================================================
+// KONFIGURASI
+// ============================================================
+// const CONFIG = {
+//     clientId: process.env.LINKQU_CLIENT_ID || 'testing',
+//     clientSecret: process.env.LINKQU_CLIENT_SECRET || '123',
+//     username: process.env.LINKQU_USERNAME || 'LI307GXIN',
+//     pin: process.env.LINKQU_PIN || '2K2NPCBBNNTovgB',
+//     serverKey: process.env.LINKQU_SERVER_KEY || 'LinkQu@2020',
+//     callbackUrl: process.env.CALLBACK_URL || 'https://top.mudico.co.id/callback',
+//     MUDICOUrl: process.env.MUDICO_URL || 'https://mudico.my.id/mudico.php',
+//     jagelApiKey: process.env.JAGEL_APIKEY || 'q2t7lktZkZIEiCDs7y9HpWP0WCRdABEGTrHidEUhrAMe0IDzXV',
+//     linkquGateway: process.env.LINKQU_GATEWAY || 'https://gateway-dev.linkqu.id/linkqu-partner',
+// };
 
-
-const db = mysql.createPool({
-    host: process.env.DB_HOST || 'hco8kksk4k4cc088cockkk4g',
-    user: process.env.DB_USER || 'mysql',
-    password: process.env.DB_PASSWORD || 'uZ4RH8Ef7vynMciS9QEbLlTDpCL2Z4tdMR55owuSasccnbYjoXUdRq04V5RauZp2',
-    database: process.env.DB_NAME || 'topup',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
-
-
-// 📝 Fungsi untuk menulis log ke stderr.log
-function logToFile(message) {
-    const logPath = path.join(__dirname, 'stderr.log');
-    const timestamp = new Date().toISOString();
-    const fullMessage = `[${timestamp}] ${message}\n`;
-
-    fs.appendFile(logPath, fullMessage, (err) => {
-        if (err) {
-            console.error("❌ Gagal menulis log:", err);
-        }
-    });
-}
-
-// 🔄 Fungsi expired format YYYYMMDDHHmmss
-function getExpiredTimestamp(minutesFromNow = 15) {
-    return moment.tz('Asia/Jakarta').add(minutesFromNow, 'minutes').format('YYYYMMDDHHmmss');
-}
-
-const getFormatNow = () => {
-    const now = new Date();
-    const pad = (n) => n.toString().padStart(2, '0');
-    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+const CONFIG = {
+    clientId: process.env.LINKQU_CLIENT_ID || '1c6d18de-0482-4032-8b86-ccfabbd1ad16',
+    clientSecret: process.env.LINKQU_CLIENT_SECRET || 'wF81cAuqlipbNHT8Ppwbcwsd9',
+    username: process.env.LINKQU_USERNAME || 'LI642KHVN',
+    pin: process.env.LINKQU_PIN || 'XBWtQGnSBjxRNsE',
+    serverKey: process.env.LINKQU_SERVER_KEY || 'Xumk9OriODJ1WK8jFp0mZPjz',
+    callbackUrl: process.env.CALLBACK_URL || 'https://topuplinku.siappgo.id/callback',
+    MUDICOUrl: process.env.MUDICO_URL || 'https://mudico.my.id/mudico.php',
+    jagelApiKey: process.env.JAGEL_APIKEY || 'q2t7lktZkZIEiCDs7y9HpWP0WCRdABEGTrHidEUhrAMe0IDzXV',
+    linkquGateway: process.env.LINKQU_GATEWAY || 'https://api.linkqu.id/linkqu-partner',
 };
 
-// 🔐 Fungsi membuat signature untuk request POST VA
-function generateSignaturePOST({
-    amount,
-    expired,
-    bank_code,
-    partner_reff,
-    customer_id,
-    customer_name,
-    customer_email,
-    clientId,
-    serverKey
-}) {
+// ============================================================
+// DATABASE POOL
+// ============================================================
+const pool = mysql.createPool({
+    host: process.env.DB_HOST || '153.92.11.209',
+    user: process.env.DB_USER || 'u922574939_topup',
+    password: process.env.DB_PASSWORD || 'Dikyjos705',
+    database: process.env.DB_NAME || 'u922574939_topup',
+    port: parseInt(process.env.DB_PORT || '3306'),
+    connectTimeout: 30000,
+    connectionLimit: 10,
+    waitForConnections: true,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000
+});
+
+// ============================================================
+// LOGGER
+// ============================================================
+const LOG_DIR = path.join(__dirname, 'logs');
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+
+function logToFile(message, type = 'INFO') {
+    const timestamp = new Date().toISOString();
+    const logPath = path.join(LOG_DIR, `${type.toLowerCase()}.log`);
+    const logMessage = `[${timestamp}] [${type}] ${message}\n`;
+    fs.appendFile(logPath, logMessage, (err) => {
+        if (err) console.error('Gagal write log:', err.message);
+    });
+    console.log(logMessage.trim());
+}
+
+// ============================================================
+// TEST KONEKSI DATABASE
+// ============================================================
+async function testDatabaseConnection() {
+    console.log('\n🔍 Testing database connection...');
+    console.log(`   Host: ${process.env.DB_HOST || '153.92.11.209'}`);
+    console.log(`   Database: ${process.env.DB_NAME || 'u922574939_topup'}`);
+
+    try {
+        const connection = await pool.getConnection();
+        const [rows] = await connection.query('SELECT VERSION() as version, NOW() as now, DATABASE() as db, USER() as user');
+        console.log('✅ DATABASE CONNECTED!');
+        console.log(`   MySQL Version: ${rows[0].version}`);
+        console.log(`   Server Time: ${rows[0].now}`);
+        console.log(`   Database: ${rows[0].db}`);
+        console.log(`   User: ${rows[0].user}`);
+
+        const [tables] = await connection.query(`
+            SELECT TABLE_NAME 
+            FROM information_schema.TABLES 
+            WHERE TABLE_SCHEMA = ? 
+            AND TABLE_NAME IN ('inquiry_va', 'inquiry_qris', 'inquiry_retail')
+        `, [rows[0].db]);
+
+        const existingTables = tables.map(t => t.TABLE_NAME);
+        console.log(`   Tables found: ${existingTables.join(', ') || 'none'}`);
+
+        if (existingTables.length < 3) {
+            console.warn('⚠️ Some tables are missing! Please create them.');
+        }
+
+        connection.release();
+        return true;
+    } catch (err) {
+        console.error('❌ DATABASE CONNECTION FAILED!');
+        console.error(`   Error: ${err.message}`);
+        console.error(`   Code: ${err.code}`);
+        return false;
+    }
+}
+
+// Run test on startup
+let dbReady = false;
+testDatabaseConnection().then(result => {
+    dbReady = result;
+    if (!dbReady) {
+        console.error('\n⚠️ WARNING: Database not ready! API will not save data.');
+    }
+});
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+function getExpiredTimestamp(minutes = 15) {
+    return moment.tz('Asia/Jakarta').add(minutes, 'minutes').format('YYYYMMDDHHmmss');
+}
+
+function generatePartnerReff() {
+    return crypto.randomBytes(5).toString('hex'); // 5 bytes = 10 hex chars
+}
+
+function mysqlNow() {
+    return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function hmac256(serverKey, data) {
+    return crypto.createHmac('sha256', serverKey).update(data).digest('hex');
+}
+
+function cleanValue(str) {
+    return String(str).replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+}
+
+function generateSignatureVA(params) {
+    const { amount, expired, bank_code, partner_reff, customer_id, customer_name, customer_email, clientId, serverKey } = params;
     const path = '/transaction/create/va';
     const method = 'POST';
-
-    const rawValue = amount + expired + bank_code + partner_reff +
-        customer_id + customer_name + customer_email + clientId;
-    const cleaned = rawValue.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
-
-    const signToString = path + method + cleaned;
-
-    return crypto.createHmac("sha256", serverKey).update(signToString).digest("hex");
+    const raw = cleanValue(amount + expired + bank_code + partner_reff + customer_id + customer_name + customer_email + clientId);
+    const signToString = path + method + raw;
+    return hmac256(serverKey, signToString);
 }
 
-function generateSignatureQRIS({
-    amount,
-    expired,
-    partner_reff,
-    customer_id,
-    customer_name,
-    customer_email,
-    clientId,
-    serverKey
-}) {
+function generateSignatureQRIS(params) {
+    const { amount, expired, partner_reff, customer_id, customer_name, customer_email, clientId, serverKey } = params;
     const path = '/transaction/create/qris';
     const method = 'POST';
-
-    const rawValue = amount + expired + partner_reff +
-        customer_id + customer_name + customer_email + clientId;
-    const cleaned = rawValue.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
-
-    const signToString = path + method + cleaned;
-
-    return crypto.createHmac("sha256", serverKey).update(signToString).digest("hex");
+    const raw = cleanValue(amount + expired + partner_reff + customer_id + customer_name + customer_email + clientId);
+    const signToString = path + method + raw;
+    return hmac256(serverKey, signToString);
 }
 
-function generateSignatureRetail({
-    amount,
-    expired,
-    retail_code,
-    partner_reff,
-    customer_id,
-    customer_name,
-    customer_email,
-    clientId,
-    serverKey
-}) {
-    // 1. Tentukan Path dan Method
+function generateSignatureRetail(params) {
+    const { amount, expired, retail_code, partner_reff, customer_id, customer_name, customer_email, clientId, serverKey } = params;
     const path = '/transaction/create/retail';
     const method = 'POST';
-
-    // 2. Gabungkan nilai parameter (Raw Value)
-    // Sesuai urutan: amount + expired + retail_code + partner_reff + customer_id + customer_name + customer_email + clientId
-    const rawValue = amount + expired + retail_code + partner_reff +
-        customer_id + customer_name + customer_email + clientId;
-
-    // 3. Bersihkan dan Ubah ke huruf kecil (Cleaned Value)
-    // Hapus karakter non-alfanumerik (seperti yang dilakukan pada fungsi QRIS)
-    const cleaned = rawValue.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
-
-    // 4. Gabungkan untuk String yang akan di-Sign (Sign to String)
-    // Path + Method + Cleaned Value
-    const signToString = path + method + cleaned;
-
-    return crypto.createHmac("sha256", serverKey).update(signToString).digest("hex");
+    const raw = cleanValue(amount + expired + retail_code + partner_reff + customer_id + customer_name + customer_email + clientId);
+    const signToString = path + method + raw;
+    return hmac256(serverKey, signToString);
 }
 
-// 🧾 Fungsi membuat kode unik partner_reff
-function generatePartnerReff() {
-    const prefix = 'INV-782372373627';
-    const timestamp = Date.now();
-    const randomStr = crypto.randomBytes(4).toString('hex');
-    return `${prefix}-${timestamp}-${randomStr}`;
-}
+// ============================================================
+// FUNGSI ADD BALANCE (TAMBAH SALDO KE MUDICO)
+// ============================================================
+// ============================================================
+// FUNGSI ADD BALANCE (TAMBAH SALDO KE MUDICO) - FIXED
+// ============================================================
+async function addBalance(amount, customer_name, methodCode, serialnumber) {
+    const originalAmount = parseInt(amount);
+    let admin;
 
-// ✅ Endpoint POST untuk membuat VA
-app.post('/create-va', async (req, res) => {
+    console.log(`💰 [ADD-BALANCE] Processing: methodCode=${methodCode}, amount=${originalAmount}`);
+
+    if (methodCode === "QRIS") {
+        admin = Math.ceil(originalAmount * 0.008) + 1000;
+    } else if (methodCode === "ALFAMART" || methodCode === "INDOMARET") {
+        admin = 3500;
+    } else {
+        admin = 3500; // VA Bank
+    }
+    const negativeAmount = originalAmount - admin;
+
+    // ✅ Username langsung dari DB
+    const username = customer_name.trim();
+
+    const formattedAmount = negativeAmount.toLocaleString('id-ID');
+    const formattedAdmin = admin.toLocaleString('id-ID');
+
+    let methodDisplayName =
+        methodCode === 'QRIS' ? 'QRIS' :
+            methodCode === 'ALFAMART' ? 'ALFAMART' :
+                methodCode === 'INDOMARET' ? 'INDOMARET' :
+                    'Virtual Account';
+
+    const catatan = `Topup Berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin} || metode ${methodDisplayName} || Biller Reff ${serialnumber}`;
+
+    console.log(`💰 [ADD-BALANCE] username dari DB: "${username}"`);
+    console.log(`   Amount bersih: ${negativeAmount}, Method: ${methodDisplayName}`);
+
+    // ✅ Kirim sebagai JSON body — sesuai format MUDICO API
+    const mudicoPayload = {
+        action: "adjust_balance",   // ← wajib ada
+        type: "username",         // ← wajib ada
+        value: username,           // ← nama field "value", bukan "username"
+        amount: negativeAmount,
+        note: catatan,
+    };
+
+    console.log(`📤 [ADD-BALANCE] MUDICO Payload:`, JSON.stringify(mudicoPayload));
+
     try {
-        console.log("📩 Request Body:", req.body);
+        const response = await axios.post(CONFIG.MUDICOUrl, mudicoPayload, {
+            headers: {
+                'Content-Type': 'application/json',   // ← JSON bukan multipart
+            },
+            timeout: 30000,
+        });
 
+        console.log("✅ MUDICO Response:", response.data);
+
+        if (response.data?.success === false || response.data?.error) {
+            throw new Error("MUDICO API gagal: " + JSON.stringify(response.data));
+        }
+
+        // Notifikasi Jagel (fire-and-forget)
+        setTimeout(() => {
+            axios.post("https://api.jagel.id/v1/message/send", {
+                type: "username",
+                value: username,
+                apikey: CONFIG.jagelApiKey,
+                content: catatan,
+            }).catch(err => console.error("⚠️ Jagel Error (Ignored):", err.message));
+        }, 1000);
+
+        return { success: true, username, negativeAmount, catatan };
+
+    } catch (error) {
+        console.error("❌ Gagal addBalance (MUDICO):", error.message);
+        throw error;
+    }
+}
+// ============================================================
+// ENDPOINT: POST /create-va
+// ============================================================
+app.post('/create-va', async (req, res) => {
+    console.log('\n📝 [CREATE-VA] Request received:', JSON.stringify(req.body, null, 2));
+
+    if (!dbReady) {
+        return res.status(503).json({ error: 'Database not ready', detail: 'Check database connection' });
+    }
+
+    try {
         const body = req.body;
         const partner_reff = generatePartnerReff();
         const expired = getExpiredTimestamp();
-        const url_callback = "https://topuplinku.siappgo.id/callback";
 
-        console.log("🆔 Generated partner_reff:", partner_reff, "| expired:", expired);
-
-        const signature = generateSignaturePOST({
+        const signature = generateSignatureVA({
             amount: body.amount,
             expired,
             bank_code: body.bank_code,
@@ -161,83 +277,86 @@ app.post('/create-va', async (req, res) => {
             customer_id: body.customer_id,
             customer_name: body.customer_name,
             customer_email: body.customer_email,
-            clientId,
-            serverKey
+            clientId: CONFIG.clientId,
+            serverKey: CONFIG.serverKey
         });
-
-        console.log("🔑 Generated signature:", signature);
 
         const payload = {
-            ...body,
-            partner_reff,
-            username,
-            pin,
-            expired,
-            signature,
-            url_callback
-        };
-
-        const headers = {
-            'client-id': clientId,
-            'client-secret': clientSecret
-        };
-
-        console.log("📤 Sending request to LinkQu:");
-        console.log("Payload:", payload);
-        console.log("Headers:", headers);
-
-        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/va';
-        const response = await axios.post(url, payload, { headers });
-        const result = response.data;
-
-        console.log("✅ Response from LinkQu:", result);
-
-        // 🐘 Simpan ke DB
-        const insertData = {
-            partner_reff,
+            amount: body.amount,
+            bank_code: body.bank_code,
             customer_id: body.customer_id,
             customer_name: body.customer_name,
-            amount: body.amount,
-            bank_code: result?.bank_name || null,
-            expired,
-            customer_phone: body.customer_phone || null,
             customer_email: body.customer_email,
-            va_number: result?.virtual_account || null,
-            response_raw: JSON.stringify(result),
-            created_at: new Date(),
-            status: "PENDING"
+            customer_phone: body.customer_phone || '',
+            partner_reff,
+            username: CONFIG.username,
+            pin: CONFIG.pin,
+            expired,
+            signature,
+            url_callback: CONFIG.callbackUrl
         };
 
-        console.log("💾 Insert to DB:", insertData);
+        console.log('🚀 Sending to LinkQu API...');
+        const response = await axios.post(
+            `${CONFIG.linkquGateway}/transaction/create/va`,
+            payload,
+            { headers: { 'client-id': CONFIG.clientId, 'client-secret': CONFIG.clientSecret }, timeout: 30000 }
+        );
 
-        await db.query('INSERT INTO inquiry_va SET ?', [insertData]);
+        const result = response.data;
+        console.log('✅ LinkQu Response:', JSON.stringify(result, null, 2));
 
-        res.json(result);
+        const vaNumber = result.virtual_account || null;
+        const bankCode = result.bank_code || body.bank_code;
+
+        const insertQuery = `
+            INSERT INTO inquiry_va 
+            (partner_reff, customer_id, customer_name, amount, bank_code, expired, 
+             customer_phone, customer_email, va_number, response_raw, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        const values = [
+            partner_reff,
+            body.customer_id,
+            body.customer_name,
+            body.amount,
+            bankCode,
+            expired,
+            body.customer_phone || null,
+            body.customer_email,
+            vaNumber,
+            JSON.stringify(result),
+            mysqlNow(),
+            'PENDING'
+        ];
+
+        const [dbResult] = await pool.execute(insertQuery, values);
+        console.log(`✅ Data saved to DB! Insert ID: ${dbResult.insertId}`);
+
+        res.json({ ...result, partner_reff, db_saved: true });
+
     } catch (err) {
-        console.error("❌ Gagal membuat VA:", err.message);
-        console.error("Detail error:", err.response?.data || err);
-
-        res.status(500).json({
-            error: "Gagal membuat VA",
-            detail: err.response?.data || err.message
-        });
+        console.error('❌ Error in /create-va:', err.message);
+        if (err.response) console.error('API Error:', err.response.data);
+        res.status(500).json({ error: 'Failed to create VA', detail: err.message });
     }
 });
 
-
-
-
+// ============================================================
+// ENDPOINT: POST /create-qris
+// ============================================================
 app.post('/create-qris', async (req, res) => {
+    console.log('\n📝 [CREATE-QRIS] Request received:', JSON.stringify(req.body, null, 2));
+
+    if (!dbReady) {
+        return res.status(503).json({ error: 'Database not ready' });
+    }
+
     try {
         const body = req.body;
-        console.log("📥 Incoming request body:", body);
-
         const partner_reff = generatePartnerReff();
         const expired = getExpiredTimestamp();
-        const url_callback = "https://topuplinku.siappgo.id/callback";
-
-        console.log("🧾 Generated partner_reff:", partner_reff);
-        console.log("⏳ Expired timestamp:", expired);
 
         const signature = generateSignatureQRIS({
             amount: body.amount,
@@ -246,59 +365,53 @@ app.post('/create-qris', async (req, res) => {
             customer_id: body.customer_id,
             customer_name: body.customer_name,
             customer_email: body.customer_email,
-            clientId,
-            serverKey
+            clientId: CONFIG.clientId,
+            serverKey: CONFIG.serverKey
         });
 
-        console.log("🔏 Generated signature:", signature);
-
         const payload = {
-            ...body,
+            amount: body.amount,
+            customer_id: body.customer_id,
+            customer_name: body.customer_name,
+            customer_email: body.customer_email,
+            customer_phone: body.customer_phone || '',
             partner_reff,
-            username,
-            pin,
+            username: CONFIG.username,
+            pin: CONFIG.pin,
             expired,
             signature,
-            url_callback
+            url_callback: CONFIG.callbackUrl
         };
 
-        console.log("📦 Final payload to API:", payload);
-
-        const headers = {
-            'client-id': clientId,
-            'client-secret': clientSecret
-        };
-
-        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/qris';
-        const response = await axios.post(url, payload, { headers });
+        console.log('🚀 Sending to LinkQu API...');
+        const response = await axios.post(
+            `${CONFIG.linkquGateway}/transaction/create/qris`,
+            payload,
+            { headers: { 'client-id': CONFIG.clientId, 'client-secret': CONFIG.clientSecret }, timeout: 30000 }
+        );
 
         const result = response.data;
-        console.log("✅ API response from LinkQu:", result);
+        console.log('✅ LinkQu Response:', JSON.stringify(result, null, 2));
 
-        // 💾 Download QR image langsung
         let qrisImageBuffer = null;
         if (result?.imageqris) {
             try {
-                console.log(`🌐 Downloading QR image from: ${result.imageqris}`);
-                const imgResp = await axios.get(result.imageqris.trim(), { responseType: 'arraybuffer' });
+                const imgResp = await axios.get(result.imageqris.trim(), { responseType: 'arraybuffer', timeout: 10000 });
                 qrisImageBuffer = Buffer.from(imgResp.data);
-                console.log("✅ QR image downloaded successfully");
-            } catch (err) {
-                console.error("⚠️ Failed to download QRIS image:", err.message);
+                console.log('✅ QR image downloaded');
+            } catch (imgErr) {
+                console.warn('⚠️ Failed to download QR:', imgErr.message);
             }
         }
 
-        // 🕒 Gunakan waktu lokal server, bukan UTC
-        const now = new Date();
-        const mysqlDateTime = now.toISOString().slice(0, 19).replace('T', ' ');
-
         const insertQuery = `
             INSERT INTO inquiry_qris 
-            (partner_reff, customer_id, customer_name, amount, expired, customer_phone, customer_email, qris_url, qris_image, response_raw, created_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+            (partner_reff, customer_id, customer_name, amount, expired, 
+             customer_phone, customer_email, qris_url, qris_image, response_raw, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        await db.execute(insertQuery, [
+        const values = [
             partner_reff,
             body.customer_id,
             body.customer_name,
@@ -309,108 +422,84 @@ app.post('/create-qris', async (req, res) => {
             result?.imageqris || null,
             qrisImageBuffer,
             JSON.stringify(result),
-            mysqlDateTime
-        ]);
+            mysqlNow(),
+            'PENDING'
+        ];
 
-        console.log(`✅ Data QRIS berhasil disimpan ke database dengan created_at = ${mysqlDateTime}`);
-        res.json(result);
+        const [dbResult] = await pool.execute(insertQuery, values);
+        console.log(`✅ Data saved to DB! Insert ID: ${dbResult.insertId}`);
+
+        res.json({ ...result, partner_reff, db_saved: true });
 
     } catch (err) {
-        const errMsg = err.response?.data?.message || err.message;
-        const logMsg = `❌ Gagal membuat QRIS: ${errMsg}`;
-        console.error(logMsg);
-
-        if (err.response?.data) {
-            console.error("📛 Full error response from API:", err.response.data);
-        }
-
-        logToFile(logMsg);
-
-        res.status(500).json({
-            error: "Gagal membuat QRIS",
-            detail: err.response?.data || err.message
-        });
+        console.error('❌ Error in /create-qris:', err.message);
+        if (err.response) console.error('API Error:', err.response.data);
+        res.status(500).json({ error: 'Failed to create QRIS', detail: err.message });
     }
 });
 
+// ============================================================
+// ENDPOINT: POST /create-retail
+// ============================================================
 app.post('/create-retail', async (req, res) => {
+    console.log('\n📝 [CREATE-RETAIL] Request received:', JSON.stringify(req.body, null, 2));
+
+    if (!dbReady) {
+        return res.status(503).json({ error: 'Database not ready' });
+    }
+
     try {
         const body = req.body;
-        console.log("📥 Incoming retail request body:", body);
-
-        // Ambil retail_code dari body. Contoh: "ALFAMART", "INDOMARET"
         const retail_code = body.retail_code;
-        if (!retail_code) {
-            return res.status(400).json({ error: "Parameter 'retail_code' diperlukan." });
-        }
-
         const partner_reff = generatePartnerReff();
-        // Biasanya transaksi retail memiliki masa expired yang lebih pendek, 
-        // pastikan getExpiredTimestamp() mengembalikan format YYYYMMDDHHmmss
         const expired = getExpiredTimestamp();
-        const url_callback = "https://topuplinku.siappgo.id/callback";
 
-        console.log("🧾 Generated partner_reff:", partner_reff);
-        console.log("⏳ Expired timestamp:", expired);
-
-        // --- 1. GENERATE SIGNATURE RETAIL ---
-        // PENTING: Gunakan fungsi generateSignatureRetail dengan parameter yang sesuai.
         const signature = generateSignatureRetail({
             amount: body.amount,
             expired,
-            retail_code, // Parameter tambahan untuk retail
+            retail_code,
             partner_reff,
             customer_id: body.customer_id,
             customer_name: body.customer_name,
             customer_email: body.customer_email,
-            clientId,
-            serverKey
+            clientId: CONFIG.clientId,
+            serverKey: CONFIG.serverKey
         });
 
-        console.log("🔏 Generated signature:", signature);
-
-        // --- 2. SIAPKAN PAYLOAD UNTUK LINKQU API ---
         const payload = {
             amount: body.amount,
-            partner_reff,
+            retail_code,
             customer_id: body.customer_id,
             customer_name: body.customer_name,
-            expired,
-            username,
-            pin,
-            retail_code, // Tambahkan retail_code ke payload
-            customer_phone: body.customer_phone,
             customer_email: body.customer_email,
-            remark: body.remark || "Pembayaran Retail",
+            customer_phone: body.customer_phone || '',
+            partner_reff,
+            username: CONFIG.username,
+            pin: CONFIG.pin,
+            expired,
             signature,
-            url_callback
+            url_callback: CONFIG.callbackUrl,
+            remark: body.remark || 'Pembayaran Retail'
         };
 
-        console.log("📦 Final payload to API:", payload);
-
-        // --- 3. PANGGIL API LINKQU ---
-        const headers = {
-            'client-id': clientId,
-            'client-secret': clientSecret
-        };
-        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/retail'; // Endpoint RETAIL
-        const response = await axios.post(url, payload, { headers });
+        console.log('🚀 Sending to LinkQu API...');
+        const response = await axios.post(
+            `${CONFIG.linkquGateway}/transaction/create/retail`,
+            payload,
+            { headers: { 'client-id': CONFIG.clientId, 'client-secret': CONFIG.clientSecret }, timeout: 30000 }
+        );
 
         const result = response.data;
-        console.log("✅ API response from LinkQu:", result);
-
-        // --- 4. SIMPAN DATA KE DATABASE ---
-        // Sesuaikan nama tabel dan kolom jika diperlukan
-        const now = new Date();
-        const mysqlDateTime = now.toISOString().slice(0, 19).replace('T', ' ');
+        console.log('✅ LinkQu Response:', JSON.stringify(result, null, 2));
 
         const insertQuery = `
             INSERT INTO inquiry_retail 
-            (partner_reff, customer_id, customer_name, amount, expired, bank_code, customer_phone, customer_email, retail_code, response_raw, created_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+            (partner_reff, customer_id, customer_name, amount, expired, bank_code,
+             customer_phone, customer_email, retail_code, response_raw, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        await db.execute(insertQuery, [
+        const values = [
             partner_reff,
             body.customer_id,
             body.customer_name,
@@ -419,371 +508,422 @@ app.post('/create-retail', async (req, res) => {
             retail_code,
             body.customer_phone || null,
             body.customer_email,
-            result?.payment_code || null, // Simpan Payment Code (misal: kode bayar Indomaret/Alfamart)
+            result?.payment_code || null,
             JSON.stringify(result),
-            mysqlDateTime
-        ]);
+            mysqlNow(),
+            'PENDING'
+        ];
 
-        console.log(`✅ Data Retail berhasil disimpan ke database dengan created_at = ${mysqlDateTime}`);
-        res.json(result);
+        const [dbResult] = await pool.execute(insertQuery, values);
+        console.log(`✅ Data saved to DB! Insert ID: ${dbResult.insertId}`);
+
+        res.json({ ...result, partner_reff, db_saved: true });
 
     } catch (err) {
-        const errMsg = err.response?.data?.message || err.message;
-        const logMsg = `❌ Gagal membuat transaksi Retail: ${errMsg}`;
-        console.error(logMsg);
-
-        if (err.response?.data) {
-            console.error("📛 Full error response from API:", err.response.data);
-        }
-
-        logToFile(logMsg);
-
-        res.status(500).json({
-            error: "Gagal membuat transaksi Retail",
-            detail: err.response?.data || err.message
-        });
+        console.error('❌ Error in /create-retail:', err.message);
+        if (err.response) console.error('API Error:', err.response.data);
+        res.status(500).json({ error: 'Failed to create Retail', detail: err.message });
     }
 });
 
-
-app.get('/download-qr/:partner_reff', async (req, res) => {
-    const partner_reff = req.params.partner_reff;
-
-    try {
-        // 1️⃣ Cek apakah QR sudah ada di DB
-        const [check] = await db.query(
-            'SELECT qris_image FROM inquiry_qris WHERE partner_reff = ?',
-            [partner_reff]
-        );
-
-        if (check.length > 0 && check[0].qris_image) {
-            console.log(`✅ QR ditemukan di database: ${partner_reff}`);
-            res.setHeader('Content-Disposition', `attachment; filename="qris-${partner_reff}.png"`);
-            res.setHeader('Content-Type', 'image/png');
-            return res.send(check[0].qris_image);
-        }
-
-        // 2️⃣ Ambil URL QR dari DB
-        const [rows] = await db.query(
-            'SELECT qris_url FROM inquiry_qris WHERE partner_reff = ?',
-            [partner_reff]
-        );
-
-        if (!rows.length || !rows[0].qris_url) {
-            return res.status(404).send('QRIS tidak ditemukan.');
-        }
-
-        const imageUrl = rows[0].qris_url.trim();
-        console.log(`🔗 Download QR dari URL: ${imageUrl}`);
-
-        // 3️⃣ Download gambar sebagai buffer
-        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-        const buffer = Buffer.from(response.data);
-
-        // 4️⃣ Simpan ke DB
-        await db.query(
-            'UPDATE inquiry_qris SET qris_image = ? WHERE partner_reff = ?',
-            [buffer, partner_reff]
-        );
-        console.log(`💾 QR disimpan di database: ${partner_reff}`);
-
-        // 5️⃣ Kirim ke user dengan force download
-        res.setHeader('Content-Disposition', `attachment; filename="qris-${partner_reff}.png"`);
-        res.setHeader('Content-Type', 'image/png');
-        res.send(buffer);
-
-    } catch (err) {
-        console.error(`❌ Error: ${err.message}`);
-        res.status(500).send('Terjadi kesalahan server.');
-    }
-});
-
-async function addBalance(amount, customer_name, va_code, serialnumber) {
-    const originalAmount = parseInt(amount);
-    let admin;
-
-    // Logika perhitungan admin
-    if (va_code === "QRIS") {
-        admin = Math.round(originalAmount * 0.008);
-    } else if (va_code === "RETAIL") {
-        admin = 2000;
-    } else {
-        admin = 2500;
-    }
-
-    const negativeAmount = originalAmount - admin;
-    // Ambil nama terakhir untuk username
-    const username = customer_name.trim().split(" ").pop();
-
-    const formattedAmount = negativeAmount.toLocaleString('id-ID');
-    const formattedAdmin = admin.toLocaleString('id-ID');
-    const catatan = `Transaksi berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin} || metode ${va_code} || Biller Reff ${serialnumber}`;
-
-    // 1. Tambah Saldo ke RTS (External API)
-    const formdata = new FormData();
-    formdata.append("amount", negativeAmount);
-    formdata.append("username", username);
-    formdata.append("note", catatan);
-
-    try {
-        const response = await axios.post('https://rtsindonesia.biz.id/qris.php', formdata, {
-            headers: formdata.getHeaders()
-        });
-        console.log("✅ RTS Response:", response.data);
-
-        // Asumsi: Jika RTS gagal, biasanya memberikan response status tertentu. 
-        // Sesuaikan pengecekan ini dengan format response rtsindonesia.biz.id
-        if (response.data.status === false) {
-            throw new Error("RTS API menolak penambahan saldo");
-        }
-
-        // 2. Kirim Notifikasi Jagel (Async, jangan biarkan ini menggagalkan transaksi utama)
-        // Kita tidak pakai 'await' di sini agar response callback tetap cepat
-        axios.post("https://api.jagel.id/v1/message/send", {
-            type: "username",
-            value: username,
-            apikey: "FF6dKZ94S3SRB4jp3zc2UulCnH5bhLaMJ7sa3dz8wm1qj8ggqu",
-            content: catatan,
-        }).catch(err => console.error("⚠️ Jagel Notif Error (Ignored):", err.message));
-
-        return { username, negativeAmount, catatan };
-
-    } catch (error) {
-        console.error("❌ Gagal di addBalance (RTS):", error.message);
-        throw error; // Lempar error agar ditangkap oleh catch di /callback (untuk rollback)
-    }
-}
-
+// ============================================================
+// ENDPOINT: POST /callback (DENGAN ADD BALANCE - FIXED dengan query DB)
+// ============================================================
 app.post('/callback', async (req, res) => {
-    const connection = await db.getConnection(); // Dapatkan koneksi dari pool
+    console.log('\n📞 [CALLBACK] Received:', JSON.stringify(req.body, null, 2));
+
+    const { partner_reff, amount, serialnumber, va_code, retail_code } = req.body;
+
+    if (!partner_reff) {
+        logToFile(`Missing partner_reff`, 'ERROR');
+        return res.status(400).json({ error: 'partner_reff wajib ada' });
+    }
+
+    const connection = await pool.getConnection();
 
     try {
-        const { partner_reff, amount, va_code, customer_name, serialnumber } = req.body;
-        const RETAIL_CODES = ['ALFAMART', 'INDOMARET'];
-
-        // Tentukan tabel target
-        let tableName = 'inquiry_va';
-        if (va_code === 'QRIS') tableName = 'inquiry_qris';
-        else if (RETAIL_CODES.includes(va_code)) tableName = 'inquiry_retail';
-
-        // --- MULAI TRANSAKSI ---
+        // MULAI TRANSAKSI
         await connection.beginTransaction();
 
-        // 1. LOCK & CHECK (Cegah Double Request di milidetik yang sama)
-        const [rows] = await connection.execute(
-            `SELECT status FROM ${tableName} WHERE partner_reff = ? FOR UPDATE`,
+        // CEK DI SEMUA TABEL BERDASARKAN partner_reff
+        let tableName = null;
+        let dbData = null;
+
+        // Cek di inquiry_va
+        let [rows] = await connection.execute(
+            `SELECT status, customer_name, amount, bank_code as method_code, 'VA' as type FROM inquiry_va WHERE partner_reff = ? FOR UPDATE`,
             [partner_reff]
         );
+        if (rows.length > 0) {
+            tableName = 'inquiry_va';
+            dbData = rows[0];
+        }
 
-        if (rows.length === 0) {
+        // Cek di inquiry_qris
+        if (!tableName) {
+            [rows] = await connection.execute(
+                `SELECT status, customer_name, amount, 'QRIS' as method_code, 'QRIS' as type FROM inquiry_qris WHERE partner_reff = ? FOR UPDATE`,
+                [partner_reff]
+            );
+            if (rows.length > 0) {
+                tableName = 'inquiry_qris';
+                dbData = rows[0];
+            }
+        }
+
+        // Cek di inquiry_retail
+        if (!tableName) {
+            [rows] = await connection.execute(
+                `SELECT status, customer_name, amount, bank_code as method_code, 'RETAIL' as type FROM inquiry_retail WHERE partner_reff = ? FOR UPDATE`,
+                [partner_reff]
+            );
+            if (rows.length > 0) {
+                tableName = 'inquiry_retail';
+                dbData = rows[0];
+            }
+        }
+
+        if (!tableName || !dbData) {
             await connection.rollback();
+            logToFile(`Transaction not found: ${partner_reff}`, 'ERROR');
             return res.status(404).json({ error: "Data transaksi tidak ditemukan" });
         }
 
-        if (rows[0].status === 'SUKSES') {
+        if (dbData.status === 'SUKSES') {
             await connection.rollback();
             console.log(`ℹ️ Skip: ${partner_reff} sudah SUKSES.`);
             return res.json({ message: "Sudah diproses sebelumnya." });
         }
 
-        // 2. UPDATE STATUS DULU (Status 'PENDING' -> 'PROSES')
-        // Ini memastikan jika addBalance lambat, request callback lain sudah melihat status bukan PENDING
+        // UPDATE STATUS
         await connection.execute(
             `UPDATE ${tableName} SET status = 'SUKSES' WHERE partner_reff = ?`,
             [partner_reff]
         );
 
-        // 3. JALANKAN LOGIKA EKSTERNAL (RTS & Jagel)
-        // Jika ini gagal (throw error), maka status di DB akan kembali jadi PENDING (karena rollback)
-        await addBalance(amount, customer_name, va_code, serialnumber);
-
-        // 4. COMMIT SEMUA
         await connection.commit();
+        console.log(`✅ Database updated to SUKSES for ${partner_reff}`);
 
-        console.log(`🚀 Callback Berhasil: Saldo ${customer_name} ditambahkan.`);
+        // AMBIL METHOD CODE DARI DATABASE (BUKAN DARI CALLBACK)
+        let methodCode = dbData.method_code;
+
+        // Untuk retail, pastikan formatnya benar (uppercase)
+        if (dbData.type === 'RETAIL') {
+            methodCode = methodCode ? methodCode.toUpperCase() : 'RETAIL';
+        }
+
+        console.log(`📌 Using method_code from database: ${methodCode} (type: ${dbData.type})`);
+        console.log(`📌 Callback sent va_code: ${va_code}, retail_code: ${retail_code} (IGNORED - using DB value)`);
+
+        const dbCustomerName = dbData.customer_name;
+        const dbAmount = dbData.amount;
+
+        // Panggil addBalance dengan methodCode yang benar dari DATABASE
+        await addBalance(dbAmount, dbCustomerName, methodCode, serialnumber || partner_reff);
+
+        console.log(`🚀 Callback Berhasil: Saldo ${dbCustomerName} ditambahkan via ${methodCode}`);
         res.json({ message: "Callback diterima dan saldo ditambahkan" });
 
     } catch (err) {
-        if (connection) await connection.rollback();
+        // Rollback status ke PENDING jika error
+        if (tableName) {
+            try {
+                await connection.execute(
+                    `UPDATE ${tableName} SET status = 'PENDING' WHERE partner_reff = ?`,
+                    [partner_reff]
+                );
+                await connection.commit();
+                console.log(`⚠️ Status rolled back to PENDING for ${partner_reff}`);
+            } catch (rollbackErr) {
+                console.error(`❌ Failed to rollback status: ${rollbackErr.message}`);
+            }
+        } else {
+            await connection.rollback();
+        }
 
-        const logMsg = `❌ Callback Error [${req.body.partner_reff}]: ${err.message}`;
+        const logMsg = `❌ Callback Error [${partner_reff}]: ${err.message}`;
         console.error(logMsg);
-        logToFile(logMsg);
+        logToFile(logMsg, 'ERROR');
 
         res.status(500).json({ error: "Internal Server Error", detail: err.message });
     } finally {
-        if (connection) connection.release(); // PENTING: Kembalikan koneksi ke pool!
+        if (connection) connection.release();
     }
 });
 
-
-app.get('/check-status/:partnerReff', async (req, res) => {
-    const partner_reff = req.params.partnerReff;
-    try {
-        const response = await axios.get(`https://api.linkqu.id/linkqu-partner/transaction/payment/checkstatus`, {
-            params: { username, partnerreff: partner_reff }, headers: { 'client-id': clientId, 'client-secret': clientSecret }
-        });
-        if (response.data.status_code === '00') {
-            await db.execute(`UPDATE order_service SET order_status = 'PAID' WHERE order_reff = ?`, [partner_reff]);
-        }
-        res.json(response.data);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-
+// ============================================================
+// ENDPOINT: GET /va-list
+// ============================================================
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
+    console.log(`\n📋 [VA-LIST] Request for username: ${username}`);
+
     if (!username) {
-        return res.status(400).json({ error: "Username diperlukan" });
+        return res.status(400).json({ error: 'Username diperlukan' });
     }
 
     try {
-        // Ambil semua data PENDING
-        const [pendingBefore] = await db.query(`
-            SELECT id, bank_code, va_number, amount, status, customer_name, expired, created_at
-            FROM inquiry_va
-            WHERE status = 'PENDING'
+        await pool.execute(`
+            DELETE FROM inquiry_va 
+            WHERE status = 'PENDING' 
+            AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
         `);
 
-        console.log("[VA-LIST] Data PENDING sebelum hapus:", pendingBefore);
-
-        const now = Date.now();
-        const fifteenMinutes = 15 * 60 * 1000;
-        const idsToDelete = pendingBefore
-            .filter(row => now - new Date(row.created_at).getTime() > fifteenMinutes)
-            .map(row => row.id);
-
-        if (idsToDelete.length > 0) {
-            await db.query(`DELETE FROM inquiry_va WHERE id IN (?)`, [idsToDelete]);
-        }
-
-        console.log(`[VA-LIST] Rows deleted = ${idsToDelete.length}`);
-
-        // Ambil data terbaru
-        const [results] = await db.query(`
-            SELECT bank_code, va_number, amount, status, customer_name, expired, created_at
+        const [results] = await pool.execute(`
+            SELECT partner_reff, bank_code, va_number, amount, status, customer_name, expired, created_at
             FROM inquiry_va
             WHERE customer_name = ?
             ORDER BY created_at DESC
-            LIMIT 5
         `, [username]);
 
-        console.log("[VA-LIST] Data PENDING setelah hapus:", results);
+        console.log(`✅ Found ${results.length} VA transactions`);
         res.json(results);
+
     } catch (err) {
-        console.error("DB error (va-list):", err.message);
-        res.status(500).json({ error: "Terjadi kesalahan saat mengambil data VA" });
+        console.error('❌ DB error in va-list:', err.message);
+        res.status(500).json({ error: 'Gagal mengambil data VA', detail: err.message });
     }
 });
 
-app.get('/retail-list', async (req, res) => {
-    const { username } = req.query;
-    if (!username) {
-        return res.status(400).json({ error: "Username diperlukan" });
-    }
-
-    try {
-        // --- 1. Hapus Transaksi PENDING yang Kedaluwarsa (Lebih dari 15 Menit) ---
-        // Ambil semua data PENDING
-        const [pendingBefore] = await db.query(`
-            SELECT id, created_at
-            FROM inquiry_retail
-            WHERE status = 'PENDING'
-        `);
-
-        console.log("[RETAIL-LIST] Data PENDING sebelum cek expired:", pendingBefore.length);
-
-        const now = Date.now();
-        // Asumsi batas waktu kedaluwarsa adalah 15 menit (15 * 60 * 1000 ms)
-        const fifteenMinutes = 15 * 60 * 1000;
-
-        // Filter ID yang sudah melewati 15 menit dari created_at
-        const idsToDelete = pendingBefore
-            .filter(row => now - new Date(row.created_at).getTime() > fifteenMinutes)
-            .map(row => row.id);
-
-        if (idsToDelete.length > 0) {
-            await db.query(`DELETE FROM inquiry_retail WHERE id IN (?)`, [idsToDelete]);
-        }
-
-        console.log(`[RETAIL-LIST] Jumlah baris PENDING yang dihapus: ${idsToDelete.length}`);
-
-        // --- 2. Ambil Data Transaksi Retail Terbaru ---
-        // Kolom yang ditampilkan: bank_code (Gerai), retail_code (Kode Bayar - asumsi Anda menggunakan ini), amount, status, created_at, expired.
-
-        const [results] = await db.query(`
-            SELECT 
-               bank_code AS retail_code,
-               retail_code AS payment_code,
-                amount, 
-                status, 
-                customer_name, 
-                expired, 
-                created_at
-            FROM inquiry_retail
-            WHERE customer_name = ?
-            ORDER BY created_at DESC
-            LIMIT 5
-        `, [username]);
-
-        console.log(`[RETAIL-LIST] Mengirim ${results.length} transaksi retail terbaru.`);
-        res.json(results);
-    } catch (err) {
-        console.error("DB error (retail-list):", err.message);
-        res.status(500).json({ error: "Terjadi kesalahan saat mengambil data Retail" });
-    }
-});
-
-
+// ============================================================
+// ENDPOINT: GET /qr-list
+// ============================================================
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
+    console.log(`\n📋 [QR-LIST] Request for username: ${username}`);
+
     if (!username) {
-        return res.status(400).json({ error: "Username diperlukan" });
+        return res.status(400).json({ error: 'Username diperlukan' });
     }
 
     try {
-        // Ambil semua data PENDING
-        const [pendingBefore] = await db.query(`
-            SELECT id, partner_reff, amount, status, customer_name, qris_url, expired, created_at
-            FROM inquiry_qris
-            WHERE status = 'PENDING'
+        await pool.execute(`
+            DELETE FROM inquiry_qris 
+            WHERE status = 'PENDING' 
+            AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
         `);
 
-        console.log("[QR-LIST] Data PENDING sebelum hapus:", pendingBefore);
-
-        const now = Date.now();
-        const fifteenMinutes = 15 * 60 * 1000;
-        const idsToDelete = pendingBefore
-            .filter(row => now - new Date(row.created_at).getTime() > fifteenMinutes)
-            .map(row => row.id);
-
-        if (idsToDelete.length > 0) {
-            await db.query(`DELETE FROM inquiry_qris WHERE id IN (?)`, [idsToDelete]);
-        }
-
-        console.log(`[QR-LIST] Rows deleted = ${idsToDelete.length}`);
-
-        // Ambil data terbaru
-        const [results] = await db.query(`
+        const [results] = await pool.execute(`
             SELECT partner_reff, amount, status, customer_name, qris_url, expired, created_at
             FROM inquiry_qris
             WHERE customer_name = ?
             ORDER BY created_at DESC
-            LIMIT 5
         `, [username]);
 
-        console.log("[QR-LIST] Data PENDING setelah hapus:", results);
+        console.log(`✅ Found ${results.length} QRIS transactions`);
         res.json(results);
+
     } catch (err) {
-        console.error("DB error (qr-list):", err.message);
-        res.status(500).json({ error: "Terjadi kesalahan saat mengambil data QR" });
+        console.error('❌ DB error in qr-list:', err.message);
+        res.status(500).json({ error: 'Gagal mengambil data QRIS', detail: err.message });
     }
 });
 
+// ============================================================
+// ENDPOINT: GET /retail-list
+// ============================================================
+app.get('/retail-list', async (req, res) => {
+    const { username } = req.query;
+    console.log(`\n📋 [RETAIL-LIST] Request for username: ${username}`);
 
+    if (!username) {
+        return res.status(400).json({ error: 'Username diperlukan' });
+    }
 
+    try {
+        await pool.execute(`
+            DELETE FROM inquiry_retail 
+            WHERE status = 'PENDING' 
+            AND created_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        `);
 
-const PORT = 3000;
+        const [results] = await pool.execute(`
+            SELECT partner_reff, bank_code as retail_code, retail_code as payment_code, 
+                   amount, status, customer_name, expired, created_at
+            FROM inquiry_retail
+            WHERE customer_name = ?
+            ORDER BY created_at DESC
+        `, [username]);
+
+        console.log(`✅ Found ${results.length} Retail transactions`);
+        res.json(results);
+
+    } catch (err) {
+        console.error('❌ DB error in retail-list:', err.message);
+        res.status(500).json({ error: 'Gagal mengambil data Retail', detail: err.message });
+    }
+});
+
+// ============================================================
+// ENDPOINT: GET /all-history
+// ============================================================
+app.get('/all-history', async (req, res) => {
+    const { username } = req.query;
+    console.log(`\n📋 [ALL-HISTORY] Request for username: ${username}`);
+
+    if (!username) {
+        return res.status(400).json({ error: 'Username diperlukan' });
+    }
+
+    try {
+        const [vaResults] = await pool.execute(`
+            SELECT 'VA' as type, partner_reff, bank_code as method_name, va_number as code,
+                   amount, status, customer_name, expired, created_at
+            FROM inquiry_va
+            WHERE customer_name = ?
+        `, [username]);
+
+        const [qrResults] = await pool.execute(`
+            SELECT 'QRIS' as type, partner_reff, 'QRIS' as method_name, qris_url as code,
+                   amount, status, customer_name, expired, created_at
+            FROM inquiry_qris
+            WHERE customer_name = ?
+        `, [username]);
+
+        const [retailResults] = await pool.execute(`
+            SELECT 'RETAIL' as type, partner_reff, bank_code as method_name, retail_code as code,
+                   amount, status, customer_name, expired, created_at
+            FROM inquiry_retail
+            WHERE customer_name = ?
+        `, [username]);
+
+        const allTransactions = [...vaResults, ...qrResults, ...retailResults];
+        allTransactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        console.log(`✅ Found ${allTransactions.length} total transactions`);
+        res.json(allTransactions);
+
+    } catch (err) {
+        console.error('❌ DB error in all-history:', err.message);
+        res.status(500).json({ error: 'Gagal mengambil riwayat', detail: err.message });
+    }
+});
+
+// ============================================================
+// ENDPOINT: GET /download-qr/:partner_reff
+// ============================================================
+app.get('/download-qr/:partner_reff', async (req, res) => {
+    const partner_reff = req.params.partner_reff;
+    console.log(`\n📥 [DOWNLOAD-QR] Request for: ${partner_reff}`);
+
+    try {
+        const [rows] = await pool.execute(
+            'SELECT qris_image, qris_url FROM inquiry_qris WHERE partner_reff = ?',
+            [partner_reff]
+        );
+
+        if (!rows.length) {
+            return res.status(404).send('QRIS tidak ditemukan');
+        }
+
+        if (rows[0].qris_image) {
+            res.setHeader('Content-Disposition', `attachment; filename="qris-${partner_reff}.png"`);
+            res.setHeader('Content-Type', 'image/png');
+            return res.send(rows[0].qris_image);
+        }
+
+        if (!rows[0].qris_url) {
+            return res.status(404).send('URL QRIS tidak tersedia');
+        }
+
+        const imgResp = await axios.get(rows[0].qris_url.trim(), { responseType: 'arraybuffer', timeout: 10000 });
+        const buffer = Buffer.from(imgResp.data);
+
+        await pool.execute('UPDATE inquiry_qris SET qris_image = ? WHERE partner_reff = ?', [buffer, partner_reff]);
+
+        res.setHeader('Content-Disposition', `attachment; filename="qris-${partner_reff}.png"`);
+        res.setHeader('Content-Type', 'image/png');
+        res.send(buffer);
+
+    } catch (err) {
+        console.error('❌ Error downloading QR:', err.message);
+        res.status(500).send('Terjadi kesalahan server');
+    }
+});
+
+// ============================================================
+// ENDPOINT: GET /check-status/:partner_reff
+// ============================================================
+app.get('/check-status/:partner_reff', async (req, res) => {
+    const partner_reff = req.params.partner_reff;
+    console.log(`\n🔍 [CHECK-STATUS] Checking transaction: ${partner_reff}`);
+
+    if (!partner_reff) {
+        return res.status(400).json({ rc: '01', message: 'partner_reff diperlukan' });
+    }
+
+    try {
+        let transaction = null;
+
+        let [rows] = await pool.execute(
+            'SELECT partner_reff, status, amount, created_at FROM inquiry_va WHERE partner_reff = ?',
+            [partner_reff]
+        );
+        if (rows.length > 0) transaction = rows[0];
+
+        if (!transaction) {
+            [rows] = await pool.execute(
+                'SELECT partner_reff, status, amount, created_at FROM inquiry_qris WHERE partner_reff = ?',
+                [partner_reff]
+            );
+            if (rows.length > 0) transaction = rows[0];
+        }
+
+        if (!transaction) {
+            [rows] = await pool.execute(
+                'SELECT partner_reff, status, amount, created_at FROM inquiry_retail WHERE partner_reff = ?',
+                [partner_reff]
+            );
+            if (rows.length > 0) transaction = rows[0];
+        }
+
+        if (!transaction) {
+            console.log(`❌ Transaction not found: ${partner_reff}`);
+            return res.status(404).json({ rc: '404', message: 'Transaksi tidak ditemukan', data: null });
+        }
+
+        const status_trx = transaction.status === 'SUKSES' ? 'success' : 'pending';
+        console.log(`✅ Status for ${partner_reff}: ${status_trx} (${transaction.status})`);
+
+        res.json({
+            rc: '00',
+            message: 'Success',
+            data: {
+                partner_reff: transaction.partner_reff,
+                status_trx: status_trx,
+                status_db: transaction.status,
+                amount: transaction.amount,
+                created_at: transaction.created_at,
+                checked_at: new Date().toISOString()
+            }
+        });
+
+    } catch (err) {
+        console.error('❌ Error checking status:', err.message);
+        res.status(500).json({ rc: '99', message: 'Internal server error', error: err.message });
+    }
+});
+
+// ============================================================
+// ENDPOINT: GET /health
+// ============================================================
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        database_ready: dbReady,
+        uptime: process.uptime()
+    });
+});
+
+// ============================================================
+// START SERVER
+// ============================================================
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
+    console.log('\n========================================');
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📍 URL: http://localhost:${PORT}`);
+    console.log(`📁 Log directory: ${LOG_DIR}`);
+    console.log('========================================\n');
 });
