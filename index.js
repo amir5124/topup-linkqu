@@ -206,48 +206,76 @@ async function addBalance(amount, customer_name, methodCode, serialnumber) {
 
     const catatan = `Topup Berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin} || metode ${methodDisplayName} || Biller Reff ${serialnumber}`;
 
-    console.log(`💰 [ADD-BALANCE] username dari DB: "${username}"`);
+    console.log(`💰 [ADD-BALANCE] username: "${username}"`);
     console.log(`   Amount bersih: ${negativeAmount}, Method: ${methodDisplayName}`);
 
-    // ✅ Kirim sebagai JSON body — sesuai format MUDICO API
-    const mudicoPayload = {
-        action: "adjust_balance",   // ← wajib ada
-        type: "username",         // ← wajib ada
-        value: username,           // ← nama field "value", bukan "username"
-        amount: negativeAmount,
+    // ✅ Payload sesuai dokumentasi Jagel: POST /v1/balance/adjust
+    const adjustPayload = {
+        type: "username",          // pilihan: username | email | phone | user_id | session
+        value: username,
+        apikey: CONFIG.jagelApiKey,
+        amount: negativeAmount,    // negatif untuk pengurangan, positif untuk penambahan
+        adjust_balance_admin: 0,   // 0 = tidak pengaruhi saldo admin
         note: catatan,
     };
 
-    console.log(`📤 [ADD-BALANCE] MUDICO Payload:`, JSON.stringify(mudicoPayload));
+    console.log(`📤 [ADD-BALANCE] Adjust Payload:`, JSON.stringify(adjustPayload));
 
     try {
-        const response = await axios.post(CONFIG.MUDICOUrl, mudicoPayload, {
-            headers: {
-                'Content-Type': 'application/json',   // ← JSON bukan multipart
-            },
-            timeout: 30000,
-        });
+        // 1️⃣ ADJUST SALDO DULU
+        const adjustResponse = await axios.post(
+            'https://api.jagel.id/v1/balance/adjust',
+            adjustPayload,
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                timeout: 30000,
+            }
+        );
 
-        console.log("✅ MUDICO Response:", response.data);
+        console.log("✅ Adjust Balance Response:", adjustResponse.data);
 
-        if (response.data?.success === false || response.data?.error) {
-            throw new Error("MUDICO API gagal: " + JSON.stringify(response.data));
+        if (adjustResponse.data?.success !== true) {
+            throw new Error("Adjust balance gagal: " + JSON.stringify(adjustResponse.data));
         }
 
-        // Notifikasi Jagel (fire-and-forget)
-        setTimeout(() => {
-            axios.post("https://api.jagel.id/v1/message/send", {
-                type: "username",
-                value: username,
-                apikey: CONFIG.jagelApiKey,
-                content: catatan,
-            }).catch(err => console.error("⚠️ Jagel Error (Ignored):", err.message));
-        }, 1000);
+        // 2️⃣ BARU KIRIM MESSAGE (setelah adjust berhasil)
+        try {
+            const msgResponse = await axios.post(
+                'https://api.jagel.id/v1/message/send',
+                {
+                    type: "username",
+                    value: username,
+                    apikey: CONFIG.jagelApiKey,
+                    content: catatan,
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    timeout: 30000,
+                }
+            );
+            console.log("✅ Message Sent Response:", msgResponse.data);
+        } catch (msgErr) {
+            // Kirim pesan gagal tidak boleh menggagalkan proses topup,
+            // karena saldo sudah berhasil di-adjust
+            console.error("⚠️ Gagal kirim message (Ignored):", msgErr.message);
+        }
 
-        return { success: true, username, negativeAmount, catatan };
+        return {
+            success: true,
+            username,
+            negativeAmount,
+            catatan,
+            adjustedBalance: adjustResponse.data?.data,
+        };
 
     } catch (error) {
-        console.error("❌ Gagal addBalance (MUDICO):", error.message);
+        console.error("❌ Gagal addBalance (Jagel):", error.message);
         throw error;
     }
 }
