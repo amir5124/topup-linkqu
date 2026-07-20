@@ -45,10 +45,10 @@ const CONFIG = {
 // DATABASE POOL
 // ============================================================
 const pool = mysql.createPool({
-    host: process.env.DB_HOST || '153.92.11.209',
-    user: process.env.DB_USER || 'u922574939_topup',
-    password: process.env.DB_PASSWORD || 'Dikyjos705',
-    database: process.env.DB_NAME || 'u922574939_topup',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     port: parseInt(process.env.DB_PORT || '3306'),
     connectTimeout: 30000,
     connectionLimit: 10,
@@ -174,9 +174,6 @@ function generateSignatureRetail(params) {
     return hmac256(serverKey, signToString);
 }
 
-// ============================================================
-// FUNGSI ADD BALANCE (TAMBAH SALDO KE MUDICO)
-// ============================================================
 // ============================================================
 // FUNGSI ADD BALANCE (TAMBAH SALDO KE MUDICO) - FIXED
 // ============================================================
@@ -540,13 +537,13 @@ app.post('/callback', async (req, res) => {
     }
 
     const connection = await pool.getConnection();
+    let tableName = null;
 
     try {
         // MULAI TRANSAKSI
         await connection.beginTransaction();
 
         // CEK DI SEMUA TABEL BERDASARKAN partner_reff
-        let tableName = null;
         let dbData = null;
 
         // Cek di inquiry_va
