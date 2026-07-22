@@ -30,13 +30,12 @@ app.use(express.json({ limit: '10mb' }));
 // };
 
 const CONFIG = {
-    clientId: process.env.LINKQU_CLIENT_ID || '1c6d18de-0482-4032-8b86-ccfabbd1ad16',
-    clientSecret: process.env.LINKQU_CLIENT_SECRET || 'wF81cAuqlipbNHT8Ppwbcwsd9',
-    username: process.env.LINKQU_USERNAME || 'LI642KHVN',
-    pin: process.env.LINKQU_PIN || 'XBWtQGnSBjxRNsE',
-    serverKey: process.env.LINKQU_SERVER_KEY || 'Xumk9OriODJ1WK8jFp0mZPjz',
+    clientId: process.env.LINKQU_CLIENT_ID || '5f5aa496-7e16-4ca1-9967-33c768dac6c7',
+    clientSecret: process.env.LINKQU_CLIENT_SECRET || 'TM1rVhfaFm5YJxKruHo0nWMWC',
+    username: process.env.LINKQU_USERNAME || 'LI9019VKS',
+    pin: process.env.LINKQU_PIN || '5m6uYAScSxQtCmU',
+    serverKey: process.env.LINKQU_SERVER_KEY || 'QtwGEr997XDcmMb1Pq8S5X1N',
     callbackUrl: process.env.CALLBACK_URL || 'https://topuplinku.siappgo.id/callback',
-    MUDICOUrl: process.env.MUDICO_URL || 'https://mudico.my.id/mudico.php',
     jagelApiKey: process.env.JAGEL_APIKEY || 'q2t7lktZkZIEiCDs7y9HpWP0WCRdABEGTrHidEUhrAMe0IDzXV',
     linkquGateway: process.env.LINKQU_GATEWAY || 'https://api.linkqu.id/linkqu-partner',
 };
