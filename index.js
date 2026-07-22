@@ -183,18 +183,20 @@ async function addBalance(amount, customer_name, methodCode, serialnumber) {
     console.log(`💰 [ADD-BALANCE] Processing: methodCode=${methodCode}, amount=${originalAmount}`);
 
     if (methodCode === "QRIS") {
-        admin = Math.ceil(originalAmount * 0.008) + 1000;
+        // Admin QRIS = 0.8% dari nominal, dibulatkan ke atas
+        admin = Math.ceil(originalAmount * 0.008);
     } else if (methodCode === "ALFAMART" || methodCode === "INDOMARET") {
-        admin = 3500;
+        admin = 2500;
     } else {
-        admin = 3500; // VA Bank
+        admin = 2500; // VA Bank
     }
-    const negativeAmount = originalAmount - admin;
 
-    // ✅ Username langsung dari DB
+    // Nominal bersih yang ditambahkan ke saldo customer (harus positif untuk topup)
+    const netAmount = originalAmount - admin;
+
     const username = customer_name.trim();
 
-    const formattedAmount = negativeAmount.toLocaleString('id-ID');
+    const formattedAmount = netAmount.toLocaleString('id-ID');
     const formattedAdmin = admin.toLocaleString('id-ID');
 
     let methodDisplayName =
@@ -206,22 +208,21 @@ async function addBalance(amount, customer_name, methodCode, serialnumber) {
     const catatan = `Topup Berhasil || nominal Rp. ${formattedAmount} || biaya admin Rp. ${formattedAdmin} || metode ${methodDisplayName} || Biller Reff ${serialnumber}`;
 
     console.log(`💰 [ADD-BALANCE] username: "${username}"`);
-    console.log(`   Amount bersih: ${negativeAmount}, Method: ${methodDisplayName}`);
+    console.log(`   Amount bersih: ${netAmount}, Admin: ${admin}, Method: ${methodDisplayName}`);
 
     // ✅ Payload sesuai dokumentasi Jagel: POST /v1/balance/adjust
     const adjustPayload = {
-        type: "username",          // pilihan: username | email | phone | user_id | session
+        type: "username",
         value: username,
         apikey: CONFIG.jagelApiKey,
-        amount: negativeAmount,    // negatif untuk pengurangan, positif untuk penambahan
-        adjust_balance_admin: 0,   // 0 = tidak pengaruhi saldo admin
+        amount: netAmount,         // positif = tambah saldo, negatif = kurangi saldo
+        adjust_balance_admin: 0,
         note: catatan,
     };
 
     console.log(`📤 [ADD-BALANCE] Adjust Payload:`, JSON.stringify(adjustPayload));
 
     try {
-        // 1️⃣ ADJUST SALDO DULU
         const adjustResponse = await axios.post(
             'https://api.jagel.id/v1/balance/adjust',
             adjustPayload,
@@ -240,7 +241,6 @@ async function addBalance(amount, customer_name, methodCode, serialnumber) {
             throw new Error("Adjust balance gagal: " + JSON.stringify(adjustResponse.data));
         }
 
-        // 2️⃣ BARU KIRIM MESSAGE (setelah adjust berhasil)
         try {
             const msgResponse = await axios.post(
                 'https://api.jagel.id/v1/message/send',
@@ -260,15 +260,14 @@ async function addBalance(amount, customer_name, methodCode, serialnumber) {
             );
             console.log("✅ Message Sent Response:", msgResponse.data);
         } catch (msgErr) {
-            // Kirim pesan gagal tidak boleh menggagalkan proses topup,
-            // karena saldo sudah berhasil di-adjust
             console.error("⚠️ Gagal kirim message (Ignored):", msgErr.message);
         }
 
         return {
             success: true,
             username,
-            negativeAmount,
+            netAmount,
+            admin,
             catatan,
             adjustedBalance: adjustResponse.data?.data,
         };
