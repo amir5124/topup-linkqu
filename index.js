@@ -36,7 +36,7 @@ const CONFIG = {
     pin: process.env.LINKQU_PIN || '5m6uYAScSxQtCmU',
     serverKey: process.env.LINKQU_SERVER_KEY || 'QtwGEr997XDcmMb1Pq8S5X1N',
     callbackUrl: process.env.CALLBACK_URL || 'https://topuplinku.siappgo.id/callback',
-    jagelApiKey: process.env.JAGEL_APIKEY || 'q2t7lktZkZIEiCDs7y9HpWP0WCRdABEGTrHidEUhrAMe0IDzXV',
+    jagelApiKey: process.env.JAGEL_APIKEY || 'c6wA9HlUkN2PYEpEOYmDwiehrw7QMIVAvPETMpR2NRN4jjnYPO',
     linkquGateway: process.env.LINKQU_GATEWAY || 'https://api.linkqu.id/linkqu-partner',
 };
 
